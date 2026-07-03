@@ -1,15 +1,15 @@
 {
   "expo": {
     "name": "SafeHer",
-    "slug": "girl-safety-app",
+    "slug": "safeher",
     "scheme": "safeher",
-    "version": "6.0.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
-      "backgroundColor": "#0A1628",
+      "backgroundColor": "#080A0F",
       "resizeMode": "contain"
     },
     "assetBundlePatterns": [
@@ -19,14 +19,14 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.girlsafety.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Girl Safety App needs your location to share with emergency contacts during emergencies.",
-        "NSLocationAlwaysUsageDescription": "Girl Safety App needs your location for live tracking during emergencies."
+        "NSLocationWhenInUseUsageDescription": "SafeHer uses your location to share your position with guardians during SOS and Safe Journey.",
+        "NSLocationAlwaysUsageDescription": "SafeHer uses background location only for active journeys and emergency live tracking."
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A1628"
+        "backgroundColor": "#080A0F"
       },
       "package": "com.girlsafety.app",
       "permissions": [
@@ -51,26 +51,26 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Girl Safety App needs your location to share with emergency contacts during emergencies.",
-          "locationAlwaysAndWhenInUsePermission": "Girl Safety App needs background location for live tracking during emergencies."
+          "locationWhenInUsePermission": "SafeHer uses your location to share your position with guardians during SOS and Safe Journey.",
+          "locationAlwaysAndWhenInUsePermission": "SafeHer uses background location only for active journeys and emergency live tracking."
         }
       ],
       [
         "expo-av",
         {
-          "microphonePermission": "Girl Safety App needs microphone access to record audio evidence during emergencies."
+          "microphonePermission": "SafeHer uses the microphone only when you enable audio evidence or sound-triggered SOS."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Girl Safety App needs camera access for evidence capture."
+          "cameraPermission": "SafeHer uses the camera only when you choose evidence capture or hidden-camera checks."
         }
       ],
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Girl Safety App uses Face ID to securely unlock your safety features."
+          "faceIDPermission": "SafeHer uses Face ID to protect your safety profile, guardians and evidence vault."
         }
       ],
       "expo-asset",

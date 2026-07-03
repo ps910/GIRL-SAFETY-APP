@@ -22,9 +22,9 @@ export type RootStackParamList = {
 
 export type TabParamList = {
   Home: undefined;
-  Contacts: undefined;
-  Location: undefined;
-  Tips: undefined;
+  Journey: undefined;
+  Guardians: undefined;
+  ProfileTab: undefined;
 };
 
 // ── Location Types ─────────────────────────────────────────────

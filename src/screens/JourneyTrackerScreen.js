@@ -16,6 +16,8 @@ const PRESETS = [10, 20, 30, 60, 90, 120];
 
 export default function JourneyTrackerScreen() {
   const navigation = useNavigation();
+  const isTabRoute = navigation.getState?.().type === 'tab';
+  const backAction = !isTabRoute && navigation.canGoBack?.() ? () => navigation.goBack() : undefined;
   const {
     activeJourney, journeyOverdue, journeyBreadcrumbs, journeyStats,
     isDeviceMoving, journeyHistory,
@@ -58,7 +60,7 @@ export default function JourneyTrackerScreen() {
 
     return (
       <Screen>
-        <Header title="Journey Active" subtitle={journeyOverdue ? '⚠️ Overdue' : 'Tracking your trip'} onBack={() => navigation.goBack()} />
+        <Header title="Safe Journey" subtitle={journeyOverdue ? 'Overdue' : 'Tracking your trip'} onBack={backAction} />
 
         <Card style={[journeyOverdue && { borderColor: 'rgba(255,23,68,0.5)' }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
@@ -101,7 +103,7 @@ export default function JourneyTrackerScreen() {
   // ── Plan a journey ────────────────────────────────────────────
   return (
     <Screen>
-      <Header title="Journey Tracker" subtitle="Tell us where you're going" onBack={() => navigation.goBack()} />
+      <Header title="Safe Journey" subtitle="Tell SafeHer where you are going" onBack={backAction} />
 
       <Card>
         <Label>Destination</Label>

@@ -201,7 +201,7 @@ export default function SettingsScreen() {
         </PrimaryBtn>
       </Card>
 
-      <Text style={styles.version}>SafeHer v7.0 • Built for safety</Text>
+      <Text style={styles.version}>SafeHer. Built for safety.</Text>
     </Screen>
   );
 }

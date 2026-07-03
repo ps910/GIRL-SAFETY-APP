@@ -37,6 +37,8 @@ const FIELDS = [
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
+  const isTabRoute = navigation.getState?.().type === 'tab';
+  const backAction = !isTabRoute && navigation.canGoBack?.() ? () => navigation.goBack() : undefined;
   const { userProfile, updateProfile, markProfileComplete } = useAuth();
   const [form, setForm] = useState(userProfile);
   const [saving, setSaving] = useState(false);
@@ -80,7 +82,7 @@ export default function ProfileScreen() {
 
   return (
     <Screen>
-      <Header title="Safety Profile" subtitle="Used by responders during emergencies" onBack={() => navigation.goBack()} />
+      <Header title="Profile" subtitle="Safety ID, privacy and account" onBack={backAction} />
 
       {/* Avatar + completeness */}
       <Card style={{ alignItems: 'center', padding: 22 }}>

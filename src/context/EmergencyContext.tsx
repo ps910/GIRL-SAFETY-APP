@@ -1,9 +1,7 @@
 /**
- * Emergency Context v6.0 (TypeScript) - Global state for ALL safety features
- * Supports: SOS, Siren, Shake, Stealth, Recording, Tracking,
- *           Inactivity Timer, Journey Monitor, Scream Detection, Voice SOS,
- *           Live Location Tracking, Background Location, Push Notifications,
- *           Live Sharing Sessions, Encrypted Storage
+ * SafeHer emergency context.
+ * Coordinates SOS, guardians, journey monitoring, live location,
+ * evidence services, background tracking and encrypted storage.
  */
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,6 +11,7 @@ import {
   startLiveLocationTracking,
   stopLiveLocationTracking,
   sendLiveLocationUpdate,
+  sendSOSToContacts,
   requestLocationPermission,
   makePhoneCall,
 } from '../utils/helpers';
@@ -91,6 +90,14 @@ interface LiveShareOptions {
   purpose?: string;
 }
 
+interface SOSDeliveryStatus {
+  state: 'idle' | 'sending' | 'sent' | 'unconfirmed' | 'failed';
+  message: string;
+  contactCount: number;
+  method?: string;
+  updatedAt?: string;
+}
+
 interface EmergencyContextValue {
   emergencyContacts: EmergencyContact[];
   settings: EmergencySettings;
@@ -121,6 +128,7 @@ interface EmergencyContextValue {
   liveShareSession: LiveShareSession | null;
   isLiveSharing: boolean;
   pushToken: string | null;
+  sosDeliveryStatus: SOSDeliveryStatus;
   // AI service status
   aiServiceStatus: Record<string, any>;
   // setters
@@ -166,7 +174,7 @@ const STORAGE_KEYS = {
 } as const;
 
 const DEFAULT_SOS_MESSAGE =
-  '🆘 EMERGENCY! I am in danger and need immediate help! Please track my location and contact authorities NOW. Sent from Girl Safety App.';
+  'EMERGENCY: I am in danger and need immediate help. Please track my location and contact authorities now. Sent from SafeHer.';
 
 const DEFAULT_SETTINGS: EmergencySettings = {
   shakeToSOS: true,
@@ -191,6 +199,12 @@ const DEFAULT_SETTINGS: EmergencySettings = {
   liveLocationSharing: true,
   pushNotifications: true,
   countryOverride: null,
+};
+
+const INITIAL_SOS_DELIVERY_STATUS: SOSDeliveryStatus = {
+  state: 'idle',
+  message: 'No SOS alert in progress.',
+  contactCount: 0,
 };
 
 interface EmergencyProviderProps {
@@ -225,6 +239,8 @@ export const EmergencyProvider: React.FC<EmergencyProviderProps> = ({ children }
   const [liveShareSession, setLiveShareSession] = useState<LiveShareSession | null>(null);
   const [isLiveSharing, setIsLiveSharing] = useState<boolean>(false);
   const [pushToken, setPushToken] = useState<string | null>(null);
+  const [sosDeliveryStatus, setSosDeliveryStatus] =
+    useState<SOSDeliveryStatus>(INITIAL_SOS_DELIVERY_STATUS);
 
   // v6.0 Journey Breadcrumb Tracking
   const [journeyBreadcrumbs, setJourneyBreadcrumbs] = useState<Breadcrumb[]>([]);
@@ -551,6 +567,8 @@ export const EmergencyProvider: React.FC<EmergencyProviderProps> = ({ children }
       Logger.error('[SOS] Background location SOS mode error:', e);
     }
 
+    let liveShareUrl: string | undefined;
+
     // Live location sharing session
     try {
       if (settings.liveLocationSharing) {
@@ -559,19 +577,95 @@ export const EmergencyProvider: React.FC<EmergencyProviderProps> = ({ children }
           ttlMinutes: 60,
           purpose: 'SOS Emergency',
         });
-        if (session) {
+        if (session?.success && session.shareUrl) {
           setLiveShareSession(session as LiveShareSession);
           setIsLiveSharing(true);
+          liveShareUrl = session.shareUrl;
           Logger.log('[SOS] Live sharing started:', session.shareUrl);
+        } else if (session?.error) {
+          Logger.error('[SOS] Live sharing did not start:', session.error);
         }
       }
     } catch (e) {
       Logger.error('[SOS] Live sharing error:', e);
     }
 
+    // Contact delivery is the core product promise. Start it from the
+    // same pipeline as the SOS button, shake trigger, and check-in alerts.
+    const alertMessage = liveShareUrl
+      ? `${sosMessage}\n\nLive tracking link: ${liveShareUrl}`
+      : sosMessage;
+    setSosDeliveryStatus({
+      state: 'sending',
+      message: `Alerting ${emergencyContacts.length} guardian${emergencyContacts.length === 1 ? '' : 's'}...`,
+      contactCount: emergencyContacts.length,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const deliveryLocation = currentLocation || undefined;
+
+    try {
+      const [smsAttempt, pushAttempt] = await Promise.allSettled([
+        sendSOSToContacts(emergencyContacts, alertMessage, deliveryLocation),
+        settings.pushNotifications
+          ? NotificationService.sendSOSPushToContacts(emergencyContacts, alertMessage, deliveryLocation)
+          : Promise.resolve({ success: false, sent: 0, total: emergencyContacts.length, reason: 'disabled' }),
+      ]);
+
+      const smsResult = smsAttempt.status === 'fulfilled' ? smsAttempt.value : null;
+      const pushResult = pushAttempt.status === 'fulfilled' ? pushAttempt.value : null;
+      const confirmedSms = smsResult?.method === 'sms' && smsResult?.result === 'sent';
+      const attemptedSms =
+        !!smsResult?.success || smsResult?.method === 'sms_intent' || smsResult?.method === 'individual_sms';
+      const attemptedPush = !!(pushResult?.success && (pushResult.sent || 0) > 0);
+      const nextDeliveryStatus: SOSDeliveryStatus = confirmedSms || attemptedPush
+        ? {
+            state: 'sent',
+            message: confirmedSms
+              ? `SMS confirmed for ${smsResult?.contactCount || emergencyContacts.length} guardian${emergencyContacts.length === 1 ? '' : 's'}.`
+              : `Push alert sent to ${pushResult?.sent || 0} guardian${(pushResult?.sent || 0) === 1 ? '' : 's'}.`,
+            contactCount: emergencyContacts.length,
+            method: confirmedSms ? smsResult?.method : 'push',
+            updatedAt: new Date().toISOString(),
+          }
+        : attemptedSms
+          ? {
+              state: 'unconfirmed',
+              message: 'Guardian alert was opened, but delivery is not confirmed. Call emergency services if unsafe.',
+              contactCount: emergencyContacts.length,
+              method: smsResult?.method,
+              updatedAt: new Date().toISOString(),
+            }
+          : {
+              state: 'failed',
+              message: 'No guardian delivery was confirmed. Call emergency services now.',
+              contactCount: emergencyContacts.length,
+              method: smsResult?.method || pushResult?.reason || 'none',
+              updatedAt: new Date().toISOString(),
+            };
+
+      setSosDeliveryStatus(nextDeliveryStatus);
+      if (nextDeliveryStatus.state === 'failed') {
+        Alert.alert(
+          'SOS Alerts Not Confirmed',
+          'Emergency mode is active, but SafeHer could not confirm contact delivery. Call emergency services directly now.',
+          [{ text: 'OK', style: 'destructive' }],
+        );
+      }
+    } catch (e) {
+      Logger.error('[SOS] Contact delivery error:', e);
+      setSosDeliveryStatus({
+        state: 'failed',
+      message: 'Guardian alert failed. Call emergency services now.',
+        contactCount: emergencyContacts.length,
+        method: 'error',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     // SOS active push notification
     try {
-      await NotificationService.sendSOSActiveNotification();
+      await NotificationService.sendSOSActiveNotification(deliveryLocation);
     } catch (e) {
       Logger.error('[SOS] Push notification error:', e);
     }
@@ -648,6 +742,7 @@ export const EmergencyProvider: React.FC<EmergencyProviderProps> = ({ children }
     setIsSOSActive(false);
     setSirenActive(false);
     setIsRecording(false);
+    setSosDeliveryStatus(INITIAL_SOS_DELIVERY_STATUS);
     // Allow immediate retry after a manual cancel
     lastSOSTriggerRef.current = 0;
 
@@ -932,6 +1027,7 @@ export const EmergencyProvider: React.FC<EmergencyProviderProps> = ({ children }
     journeyBreadcrumbs, isDeviceMoving, journeyStats, journeyHistory,
     // v6.0 background location + live sharing + push
     isBackgroundTracking, liveShareSession, isLiveSharing, pushToken,
+    sosDeliveryStatus,
     // AI service status
     aiServiceStatus,
     // setters

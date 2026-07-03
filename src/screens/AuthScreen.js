@@ -487,7 +487,7 @@ function HomeView({ goTo, run, loadingKey, authenticate, showError, biometricEna
       <View style={S.footerWrap}>
         <View style={S.footerDivider} />
         <Text style={S.footerNote}>🔒 Your data stays on device  ·  Privacy first</Text>
-        <Text style={S.footerVersion}>SafeHer v7.0</Text>
+        <Text style={S.footerVersion}>SafeHer</Text>
       </View>
     </ScrollView>
   );

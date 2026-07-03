@@ -16,32 +16,33 @@ import { Ionicons } from '@expo/vector-icons';
 //  TOKENS
 // ────────────────────────────────────────────────────────────────
 export const T = {
-  bg:           '#07070B',
-  bgGradient:   '#0E0E18',
-  surface:      'rgba(255,255,255,0.03)',
-  surfaceElev:  'rgba(255,255,255,0.05)',
-  card:         'rgba(30,30,42,0.65)',
-  cardElev:     'rgba(40,40,55,0.85)',
-  border:       'rgba(255,255,255,0.06)',
-  borderActive: 'rgba(255,42,112,0.4)',
+  bg:           '#080A0F',
+  bgElevated:   '#0E1118',
+  bgGradient:   '#111827',
+  surface:      'rgba(255,255,255,0.045)',
+  surfaceElev:  'rgba(255,255,255,0.075)',
+  card:         '#11151D',
+  cardElev:     '#171C26',
+  border:       'rgba(255,255,255,0.09)',
+  borderActive: 'rgba(225,29,72,0.42)',
 
-  primary:      '#FF2A70',
-  primaryDark:  '#D81B60',
-  primaryGlow:  'rgba(255,42,112,0.3)',
-  accent:       '#FF8FAB',
+  primary:      '#E11D48',
+  primaryDark:  '#BE123C',
+  primaryGlow:  'rgba(225,29,72,0.24)',
+  accent:       '#F97316',
 
   white:        '#FFFFFF',
-  text:         '#F0F0F8',
-  textSub:      '#8B8C9E',
-  textHint:     '#5C5D72',
+  text:         '#F8FAFC',
+  textSub:      '#A7B0BE',
+  textHint:     '#687386',
 
-  danger:       '#FF1744',
-  warning:      '#FFB300',
-  success:      '#00E676',
-  info:         '#7C4DFF',
-  blue:         '#4FC3F7',
-  teal:         '#26A69A',
-  orange:       '#FF6D00',
+  danger:       '#E11D48',
+  warning:      '#F59E0B',
+  success:      '#10B981',
+  info:         '#6366F1',
+  blue:         '#3B82F6',
+  teal:         '#14B8A6',
+  orange:       '#F97316',
 } as const;
 
 // ────────────────────────────────────────────────────────────────
@@ -96,15 +97,19 @@ export function Card({ children, style, padded = true, onPress }: {
   padded?: boolean;
   onPress?: () => void;
 }) {
-  const Wrap: any = onPress ? Pressable : View;
-  return (
-    <Wrap
-      onPress={onPress}
-      style={({ pressed }: any) => [s.card, padded && { padding: 16 }, pressed && onPress && { opacity: 0.7 }, style]}
-    >
-      {children}
-    </Wrap>
-  );
+  const baseStyle = [s.card, padded && { padding: 16 }, style];
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [baseStyle, pressed && { opacity: 0.72 }]}
+      >
+        {children}
+      </Pressable>
+    );
+  }
+
+  return <View style={baseStyle}>{children}</View>;
 }
 
 // ────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 /**
  * App Theme - Colors, Fonts & Styling Constants
- * Girl Safety App — Modern, clean, empowering design system
+ * SafeHer — Modern, calm, emergency-first design system
  * 
  * v2.0: Dark mode support via useColorScheme()
  */

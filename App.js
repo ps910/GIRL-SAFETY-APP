@@ -1,10 +1,7 @@
 /**
- * Girl Safety App v6.0 — Next-Gen Women's Safety Application
- * AI-Powered distress detection, evidence vault, journey tracking,
- * predictive anomaly detection, offline SOS, background location,
- * push notifications, live sharing, encrypted storage, dark mode.
- * 
- * v6.0: Onboarding flow, dark mode, background services, encrypted storage
+ * SafeHer — Women's personal safety companion.
+ * Emergency-first product flow with guardians, Safe Journey, SOS,
+ * live location, evidence capture, encrypted storage and recovery.
  */
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, useColorScheme, AppState } from 'react-native';

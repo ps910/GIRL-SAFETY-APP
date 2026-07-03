@@ -1,167 +1,144 @@
 /**
- * HomeScreen v7.0 — Premium Safety Dashboard
+ * HomeScreen - SafeHer command center
  *
- * Design goals:
- *   • All background services (shake / scream / siren / recording) live
- *     in EmergencyContext — this screen is *only* presentation.
- *   • Dark-luxury aesthetic, consistent with AuthScreen v7.
- *   • Single-tap SOS with confirm countdown (5s) + long-press = instant.
- *   • Live status surface so the user trusts what's running.
- *   • Stealth calculator preserved as duress UI.
+ * Product model:
+ * - SOS is always unmistakable.
+ * - The rest of the screen answers one question: what should I do now?
+ * - Secondary tools exist, but they do not compete with the emergency path.
  */
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Vibration, Alert, Animated, Dimensions, StatusBar, Platform, Easing,
+  View,
+  Text,
+  TouchableOpacity,
+  Pressable,
+  StyleSheet,
+  Animated,
+  Dimensions,
+  StatusBar,
+  Platform,
+  Vibration,
+  Alert,
+  Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { useEmergency } from '../context/EmergencyContext';
-import {
-  makePhoneCall,
-  getLocalEmergencyNumbers,
-  vibrateEmergency,
-} from '../utils/helpers';
+import { getLocalEmergencyNumbers, makePhoneCall, vibrateEmergency } from '../utils/helpers';
+import { T } from '../components/ui';
 
-// ──────────────────────────────────────────────────────────────
-//  DESIGN TOKENS — Dark Luxury (matches AuthScreen v7)
-// ──────────────────────────────────────────────────────────────
-const C = {
-  bg:           '#07070B',
-  bgGradient:   '#0E0E18',
-  surface:      'rgba(255,255,255,0.03)',
-  card:         'rgba(30,30,42,0.65)',
-  border:       'rgba(255,255,255,0.06)',
-  borderActive: 'rgba(255,42,112,0.4)',
-  primary:      '#FF2A70',
-  primaryDark:  '#D81B60',
-  accent:       '#FF8FAB',
-  white:        '#FFFFFF',
-  text:         '#F0F0F8',
-  textSub:      '#8B8C9E',
-  textHint:     '#5C5D72',
-  danger:       '#FF1744',
-  warning:      '#FFB300',
-  success:      '#00E676',
-  info:         '#7C4DFF',
-};
-
-const { width: W } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SOS_COUNTDOWN_DEFAULT = 5;
 
-// ──────────────────────────────────────────────────────────────
-//  MAIN
-// ──────────────────────────────────────────────────────────────
+const SECONDARY_TOOLS = [
+  { icon: 'call', label: 'Fake call', route: 'FakeCall', description: 'Create an exit excuse.' },
+  { icon: 'medkit', label: 'Nearby help', route: 'NearbyHelp', description: 'Hospitals, police and safe places.' },
+  { icon: 'lock-closed', label: 'Evidence vault', route: 'EvidenceVault', description: 'Store protected recordings.' },
+  { icon: 'document-text', label: 'Report incident', route: 'IncidentReport', description: 'Create a structured record.' },
+  { icon: 'eye-off', label: 'Hidden camera scan', route: 'HiddenCamera', description: 'Check risky rooms discreetly.' },
+  { icon: 'shield-half', label: 'Self defense', route: 'SelfDefense', description: 'Short, practical guidance.' },
+];
+
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const EMERGENCY_NUMBERS = useMemo(() => getLocalEmergencyNumbers(), []);
-
+  const emergencyNumbers = useMemo(() => getLocalEmergencyNumbers(), []);
   const {
-    emergencyContacts, settings, isSOSActive,
-    triggerSOS, cancelSOS,
-    currentLocation, setCurrentLocation,
-    sirenActive, isRecording,
-    stealthMode, checkIn,
-    isLiveTracking, isBackgroundTracking,
-    checkInOverdue, lastCheckIn,
-    activeJourney, journeyOverdue,
+    emergencyContacts,
+    settings,
+    isSOSActive,
+    triggerSOS,
+    cancelSOS,
+    currentLocation,
+    setCurrentLocation,
+    sirenActive,
+    isRecording,
+    stealthMode,
+    checkIn,
+    isLiveTracking,
+    isBackgroundTracking,
+    checkInOverdue,
+    lastCheckIn,
+    activeJourney,
+    journeyOverdue,
     isScreamDetecting,
+    isLiveSharing,
+    sosDeliveryStatus,
+    completeJourney,
   } = useEmergency();
 
-  // ─── Local UI state ────────────────────────────────────────
   const [countdown, setCountdown] = useState(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const countdownRef = useRef(null);
-
-  // ─── Animations ────────────────────────────────────────────
+  const fadeIn = useRef(new Animated.Value(0)).current;
   const sosPulse = useRef(new Animated.Value(1)).current;
-  const sosRing  = useRef(new Animated.Value(0)).current;
-  const sosGlow  = useRef(new Animated.Value(0.4)).current;
-  const fadeIn   = useRef(new Animated.Value(0)).current;
+  const ring = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(fadeIn, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-  }, []);
+    Animated.timing(fadeIn, { toValue: 1, duration: 320, useNativeDriver: true }).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(sosPulse, { toValue: 1.035, duration: 1200, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
+        Animated.timing(sosPulse, { toValue: 1, duration: 1200, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
+      ]),
+    ).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(ring, { toValue: 1, duration: 1900, useNativeDriver: true, easing: Easing.out(Easing.quad) }),
+        Animated.timing(ring, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [fadeIn, ring, sosPulse]);
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(sosPulse, { toValue: 1.06, duration: 1400, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
-        Animated.timing(sosPulse, { toValue: 1,    duration: 1400, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
-      ]),
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(sosRing, { toValue: 1, duration: 2200, useNativeDriver: true, easing: Easing.out(Easing.quad) }),
-        Animated.timing(sosRing, { toValue: 0, duration: 0,    useNativeDriver: true }),
-      ]),
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(sosGlow, { toValue: 0.9, duration: 1500, useNativeDriver: true }),
-        Animated.timing(sosGlow, { toValue: 0.4, duration: 1500, useNativeDriver: true }),
-      ]),
-    ).start();
-  }, []);
-
-  // ─── Initial location fetch ────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        const { status } = await Location.getForegroundPermissionsAsync();
         if (status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setCurrentLocation(loc);
       } catch {}
     })();
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, []);
+  }, [setCurrentLocation]);
 
-  // ─── Overdue check-in alert (presentation only — context handles logic) ──
   useEffect(() => {
     if (checkInOverdue && settings.inactivitySOSEnabled && !isSOSActive) {
       Alert.alert(
-        'Check-In Required',
-        "You haven't checked in recently. Are you safe?",
+        'Check in',
+        'SafeHer has not heard from you recently. Are you safe?',
         [
-          { text: "I'm Safe ✓", onPress: checkIn },
-          { text: '🆘 Send SOS', style: 'destructive', onPress: () => executeFullSOS() },
+          { text: 'I am safe', onPress: checkIn },
+          { text: 'Send SOS', style: 'destructive', onPress: () => executeFullSOS() },
         ],
         { cancelable: false },
       );
     }
-  }, [checkInOverdue]);
+  }, [checkInOverdue, settings.inactivitySOSEnabled, isSOSActive, checkIn]);
 
   useEffect(() => {
     if (journeyOverdue && activeJourney && !isSOSActive) {
       Alert.alert(
-        'Journey Overdue',
-        `You haven't arrived at "${activeJourney.destination}" on time.`,
+        'Journey overdue',
+        `You have not arrived at ${activeJourney.destination}.`,
         [
-          { text: 'I Arrived',   onPress: () => navigation.navigate('JourneyTracker') },
-          { text: '🆘 Send SOS', style: 'destructive', onPress: () => executeFullSOS() },
+          { text: 'I arrived', onPress: completeJourney },
+          { text: 'Send SOS', style: 'destructive', onPress: () => executeFullSOS() },
         ],
       );
     }
-  }, [journeyOverdue]);
+  }, [journeyOverdue, activeJourney, isSOSActive, completeJourney]);
 
-  // ─── SOS countdown (5s pre-trigger window so accidental taps cancel) ──
+  const executeFullSOS = useCallback(() => {
+    Vibration.vibrate([0, 900, 180, 900, 180, 900], true);
+    triggerSOS();
+  }, [triggerSOS]);
+
   const startSOSCountdown = useCallback(() => {
     if (isSOSActive || countdown !== null) return;
-    if (emergencyContacts.length === 0) {
-      Alert.alert(
-        'No Emergency Contacts',
-        'Add at least one trusted contact before triggering SOS.',
-        [
-          { text: 'Add Contact', onPress: () => navigation.navigate('Contacts') },
-          { text: 'Cancel', style: 'cancel' },
-        ],
-      );
-      return;
-    }
     const secs = settings.countdownSeconds || SOS_COUNTDOWN_DEFAULT;
     setCountdown(secs);
     vibrateEmergency();
@@ -179,7 +156,7 @@ export default function HomeScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       }
     }, 1000);
-  }, [isSOSActive, countdown, settings, emergencyContacts.length]);
+  }, [countdown, executeFullSOS, isSOSActive, settings.countdownSeconds]);
 
   const cancelCountdown = () => {
     if (countdownRef.current) {
@@ -190,315 +167,418 @@ export default function HomeScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const executeFullSOS = useCallback(() => {
-    Vibration.vibrate([0, 1000, 200, 1000, 200, 1000], true);
-    triggerSOS();
-  }, [triggerSOS]);
-
   const stopSOS = useCallback(() => {
     Vibration.cancel();
     cancelSOS();
   }, [cancelSOS]);
 
-  // ─── Stealth Calculator (duress UI) ─────────────────────────
+  const homeState = useMemo(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const isNight = hour >= 19 || hour < 5;
+    const isMorning = hour >= 5 && hour < 12;
+    const guardianActive = isLiveSharing || isBackgroundTracking;
+    const hasGuardians = emergencyContacts.length > 0;
+    const highRiskHeuristic = isNight && !activeJourney && !guardianActive;
+
+    if (isSOSActive) {
+      return {
+        tone: 'danger',
+        eyebrow: 'Emergency mode',
+        title: 'Help is being coordinated.',
+        body: sosDeliveryStatus?.message || 'SafeHer is alerting your guardians, recording evidence and sharing live location.',
+        cta: 'Stop SOS',
+        action: stopSOS,
+        icon: 'warning',
+      };
+    }
+
+    if (journeyOverdue && activeJourney) {
+      return {
+        tone: 'danger',
+        eyebrow: 'Journey overdue',
+        title: 'You have not arrived yet.',
+        body: 'Confirm you are safe or send SOS now. Your guardians need a clear signal.',
+        cta: 'I arrived safely',
+        action: completeJourney,
+        icon: 'time',
+      };
+    }
+
+    if (activeJourney) {
+      const eta = new Date(activeJourney.expectedArrival).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return {
+        tone: 'safe',
+        eyebrow: 'Safe Journey active',
+        title: `We are with you until ${activeJourney.destination}.`,
+        body: `ETA ${eta}. Your route is being watched and your guardians can be alerted if you are late.`,
+        cta: 'I arrived safely',
+        action: completeJourney,
+        icon: 'navigate',
+      };
+    }
+
+    if (!hasGuardians) {
+      return {
+        tone: 'warning',
+        eyebrow: 'Setup needed',
+        title: 'Add one guardian before tonight.',
+        body: 'SOS works best when a real person already knows they are trusted by you.',
+        cta: 'Add guardians',
+        action: () => navigation.navigate('Guardians'),
+        icon: 'people',
+      };
+    }
+
+    if (highRiskHeuristic) {
+      return {
+        tone: 'warning',
+        eyebrow: 'After sunset',
+        title: 'Start a Safe Journey before you travel.',
+        body: 'SafeHer will watch your ETA and make it easy to alert guardians if something changes.',
+        cta: 'Start Safe Journey',
+        action: () => navigation.navigate('Journey'),
+        icon: 'moon',
+      };
+    }
+
+    if (guardianActive) {
+      return {
+        tone: 'safe',
+        eyebrow: 'Guardian active',
+        title: 'Your location protection is on.',
+        body: `${emergencyContacts.length} guardian${emergencyContacts.length === 1 ? '' : 's'} ready. Background location is available if SOS starts.`,
+        cta: 'View guardians',
+        action: () => navigation.navigate('Guardians'),
+        icon: 'shield-checkmark',
+      };
+    }
+
+    return {
+      tone: 'safe',
+      eyebrow: isMorning ? 'Good morning' : 'Protected',
+      title: isMorning ? 'SafeHer is ready for your day.' : 'You are protected.',
+      body: `${emergencyContacts.length} guardian${emergencyContacts.length === 1 ? '' : 's'} ready. Start a journey when you travel, or press SOS if you need help.`,
+      cta: 'Start Safe Journey',
+      action: () => navigation.navigate('Journey'),
+      icon: 'shield-checkmark',
+    };
+  }, [
+    activeJourney,
+    completeJourney,
+    emergencyContacts.length,
+    isBackgroundTracking,
+    isLiveSharing,
+    isSOSActive,
+    journeyOverdue,
+    navigation,
+    sosDeliveryStatus?.message,
+    stopSOS,
+  ]);
+
+  const statusItems = useMemo(() => {
+    const timeSinceCheckIn = Math.max(0, Math.floor((Date.now() - lastCheckIn.getTime()) / 60000));
+    return [
+      {
+        label: 'Guardians',
+        value: emergencyContacts.length > 0 ? `${emergencyContacts.length} ready` : 'Add now',
+        icon: 'people',
+        color: emergencyContacts.length > 0 ? T.success : T.warning,
+      },
+      {
+        label: 'Location',
+        value: currentLocation ? 'Verified' : 'Waiting',
+        icon: 'location',
+        color: currentLocation ? T.blue : T.warning,
+      },
+      {
+        label: 'Check-in',
+        value: settings.inactivitySOSEnabled ? `${timeSinceCheckIn}m ago` : 'Optional',
+        icon: 'checkmark-circle',
+        color: checkInOverdue ? T.danger : T.success,
+      },
+    ];
+  }, [checkInOverdue, currentLocation, emergencyContacts.length, lastCheckIn, settings.inactivitySOSEnabled]);
+
+  const emergencyPills = [
+    settings.shakeToSOS && { icon: 'phone-portrait', label: 'Shake SOS', active: true },
+    settings.sirenEnabled && { icon: 'volume-high', label: sirenActive ? 'Siren on' : 'Siren ready', active: sirenActive },
+    settings.autoRecordAudio && { icon: 'mic', label: isRecording ? 'Recording' : 'Evidence', active: isRecording },
+    settings.screamDetection && { icon: 'ear', label: isScreamDetecting ? 'Listening' : 'Sound AI', active: isScreamDetecting },
+    isLiveTracking && { icon: 'navigate', label: 'Live tracking', active: true },
+  ].filter(Boolean);
+
+  const ringScale = ring.interpolate({ inputRange: [0, 1], outputRange: [1, 1.38] });
+  const ringOpacity = ring.interpolate({ inputRange: [0, 0.65, 1], outputRange: [0.34, 0.12, 0] });
+
   if (stealthMode) return <StealthCalculator onTriggerSOS={executeFullSOS} />;
-
-  // ─── Quick actions ───────────────────────────────────────────
-  const quickActions = useMemo(() => [
-    { icon: 'call',           label: 'Police',      sub: EMERGENCY_NUMBERS.police,       color: C.danger,  onPress: () => makePhoneCall(EMERGENCY_NUMBERS.police) },
-    { icon: 'medical',        label: 'Ambulance',   sub: EMERGENCY_NUMBERS.ambulance,    color: '#FF6D00', onPress: () => makePhoneCall(EMERGENCY_NUMBERS.ambulance) },
-    { icon: 'woman',          label: 'Women Help',  sub: EMERGENCY_NUMBERS.womenHelpline, color: C.info,    onPress: () => makePhoneCall(EMERGENCY_NUMBERS.womenHelpline) },
-    { icon: 'call-outline',   label: 'Fake Call',   sub: 'Decoy',                        color: C.success, onPress: () => navigation.navigate('FakeCall') },
-  ], [EMERGENCY_NUMBERS, navigation]);
-
-  const tools = useMemo(() => [
-    { icon: 'navigate',         label: 'Journey',       color: '#1565C0', screen: 'JourneyTracker' },
-    { icon: 'document-text',    label: 'Report',        color: '#4E342E', screen: 'IncidentReport' },
-    { icon: 'eye-off',          label: 'Hidden Cam',    color: '#37474F', screen: 'HiddenCamera' },
-    { icon: 'lock-closed',      label: 'Vault',         color: '#455A64', screen: 'EvidenceVault' },
-    { icon: 'locate',           label: 'Guardian',      color: '#00838F', screen: 'GuardianMode' },
-    { icon: 'shield-half',      label: 'Self Defense',  color: '#2962FF', screen: 'SelfDefense' },
-    { icon: 'navigate-outline', label: 'Nearby Help',   color: '#00C853', screen: 'NearbyHelp' },
-    { icon: 'person-circle',    label: 'Profile',       color: '#6200EA', screen: 'Profile' },
-  ], []);
-
-  const timeSinceCheckIn = Math.floor((Date.now() - lastCheckIn.getTime()) / 60_000);
-
-  const ringScale   = sosRing.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] });
-  const ringOpacity = sosRing.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.2, 0] });
-  const glowScale   = sosGlow.interpolate({ inputRange: [0.4, 0.9], outputRange: [1, 1.15] });
 
   return (
     <View style={[styles.root, isSOSActive && styles.rootDanger]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-
+      <StatusBar barStyle="light-content" backgroundColor={T.bg} />
       <Animated.ScrollView
         style={{ opacity: fadeIn }}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* ─── HEADER ─── */}
         <View style={styles.header}>
+          <View style={styles.brandMark}>
+            <Ionicons name="shield-checkmark" size={22} color={T.white} />
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>Stay safe,</Text>
-            <Text style={styles.appName}>SafeHer</Text>
+            <Text style={styles.brand}>SafeHer</Text>
+            <Text style={styles.brandSub}>Personal safety companion</Text>
           </View>
           <TouchableOpacity
-            style={styles.iconBtn}
+            style={styles.iconButton}
             onPress={() => navigation.navigate('Settings')}
-            accessibilityLabel="Open Settings"
+            accessibilityLabel="Open settings"
           >
-            <Ionicons name="settings-outline" size={20} color={C.white} />
+            <Ionicons name="settings-outline" size={20} color={T.text} />
           </TouchableOpacity>
         </View>
 
-        {/* ─── ACTIVE JOURNEY BANNER ─── */}
-        {activeJourney && (
+        <View style={[styles.contextCard, styles[`context_${homeState.tone}`]]}>
+          <View style={styles.contextTop}>
+            <View style={[styles.contextIcon, styles[`contextIcon_${homeState.tone}`]]}>
+              <Ionicons name={homeState.icon} size={22} color={styles[`tone_${homeState.tone}`].color} />
+            </View>
+            <Text style={[styles.contextEyebrow, styles[`tone_${homeState.tone}`]]}>{homeState.eyebrow}</Text>
+          </View>
+          <Text style={styles.contextTitle}>{homeState.title}</Text>
+          <Text style={styles.contextBody}>{homeState.body}</Text>
           <TouchableOpacity
-            style={[styles.banner, journeyOverdue && styles.bannerDanger]}
-            onPress={() => navigation.navigate('JourneyTracker')}
+            style={[styles.contextAction, homeState.tone === 'danger' && styles.contextActionDanger]}
+            onPress={homeState.action}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={homeState.cta}
           >
-            <View style={[styles.bannerIcon, { backgroundColor: journeyOverdue ? '#FF174422' : '#1565C022' }]}>
-              <Ionicons name="navigate" size={18} color={journeyOverdue ? C.danger : '#1565C0'} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.bannerTitle, journeyOverdue && { color: C.danger }]}>
-                {journeyOverdue ? 'Journey Overdue!' : 'Journey Active'}
-              </Text>
-              <Text style={styles.bannerSub} numberOfLines={1}>
-                → {activeJourney.destination} • ETA {new Date(activeJourney.expectedArrival).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={C.textHint} />
+            <Text style={styles.contextActionText}>{homeState.cta}</Text>
+            <Ionicons name="arrow-forward" size={17} color={T.white} />
           </TouchableOpacity>
-        )}
-
-        {/* ─── PROTECTION STATUS ─── */}
-        <View style={[styles.statusCard, isSOSActive && styles.statusCardDanger]}>
-          <View style={styles.statusRow}>
-            <View style={[styles.statusIcon, { backgroundColor: isSOSActive ? '#FF174422' : '#00E67622' }]}>
-              <Ionicons
-                name={isSOSActive ? 'warning' : 'shield-checkmark'}
-                size={22}
-                color={isSOSActive ? C.danger : C.success}
-              />
-            </View>
-            <View style={{ flex: 1, marginLeft: 14 }}>
-              <Text style={[styles.statusTitle, isSOSActive && { color: C.danger }]}>
-                {isSOSActive ? 'EMERGENCY ACTIVE' : 'Protection On'}
-              </Text>
-              <Text style={styles.statusSub}>
-                {isSOSActive
-                  ? `Live tracking ${isLiveTracking ? '✓' : '·'}  Recording ${isRecording ? '✓' : '·'}  Siren ${sirenActive ? '✓' : '·'}`
-                  : `${emergencyContacts.length} contact${emergencyContacts.length !== 1 ? 's' : ''} • All systems ready`}
-              </Text>
-            </View>
-          </View>
-
-          {/* Feature pills */}
-          <View style={styles.pills}>
-            {settings.shakeToSOS               && <Pill icon="phone-portrait-outline" label="Shake" />}
-            {settings.sirenEnabled              && <Pill icon="volume-high-outline"     label="Siren" active={sirenActive} />}
-            {settings.autoRecordAudio           && <Pill icon="mic-outline"              label="Record" active={isRecording} />}
-            {settings.screamDetection           && <Pill icon="ear-outline"              label="AI Sound" active={isScreamDetecting} activeColor={C.success} />}
-            {settings.inactivitySOSEnabled      && <Pill icon="timer-outline"            label="Check-in" />}
-            {settings.backgroundLocationEnabled && <Pill icon="locate-outline"           label="BG Loc" active={isBackgroundTracking} activeColor={C.success} />}
-          </View>
         </View>
 
-        {/* ─── CHECK-IN BUTTON ─── */}
-        {settings.inactivitySOSEnabled && !isSOSActive && (
-          <TouchableOpacity
-            style={[styles.checkIn, checkInOverdue && styles.checkInOverdue]}
-            onPress={() => {
-              checkIn();
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            }}
-            activeOpacity={0.85}
-            accessibilityLabel="Tap to check in safe"
-          >
-            <View style={[styles.checkInIcon, { backgroundColor: checkInOverdue ? '#FF174422' : '#00E67622' }]}>
-              <Ionicons name="checkmark-circle" size={22} color={checkInOverdue ? C.danger : C.success} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={[styles.checkInTitle, checkInOverdue && { color: C.danger }]}>
-                {checkInOverdue ? 'Check-In Overdue!' : 'Tap to Check In'}
-              </Text>
-              <Text style={styles.checkInSub}>
-                {timeSinceCheckIn < 1 ? 'Just now' : `${timeSinceCheckIn}m ago`} • Timer: {settings.inactivityTimeout}min
-              </Text>
-            </View>
-            <View style={[styles.checkInBtn, checkInOverdue && { backgroundColor: C.danger }]}>
-              <Ionicons name="checkmark" size={14} color={C.white} />
-              <Text style={styles.checkInBtnText}>SAFE</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* ─── SOS BUTTON ─── */}
-        <View style={styles.sosWrap}>
-          {countdown !== null ? (
-            <View style={styles.countdownWrap} accessibilityLabel={`SOS in ${countdown} seconds`}>
-              <Text style={styles.countdownLabel}>SOS ACTIVATING IN</Text>
-              <View style={styles.countdownCircle}>
-                <Text style={styles.countdownNum}>{countdown}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={cancelCountdown}
-                activeOpacity={0.85}
-                accessibilityLabel="Cancel SOS countdown"
-              >
-                <Ionicons name="close" size={16} color={C.white} />
-                <Text style={styles.cancelBtnText}>CANCEL</Text>
-              </TouchableOpacity>
-            </View>
-          ) : isSOSActive ? (
-            <TouchableOpacity
-              style={styles.stopSOS}
-              onPress={stopSOS}
-              activeOpacity={0.85}
-              accessibilityLabel="Stop emergency"
-            >
-              <Ionicons name="stop-circle" size={48} color={C.white} />
-              <Text style={styles.stopSOSText}>STOP SOS</Text>
-              <Text style={styles.stopSOSSub}>Tap to cancel emergency</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.sosButtonGroup}>
-              <Animated.View style={[styles.sosRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
-              <Animated.View style={[styles.sosGlow, { opacity: sosGlow, transform: [{ scale: glowScale }] }]} />
-              <Animated.View style={{ transform: [{ scale: sosPulse }] }}>
-                <TouchableOpacity
-                  style={styles.sosButton}
-                  onPress={startSOSCountdown}
-                  onLongPress={executeFullSOS}
-                  delayLongPress={500}
-                  activeOpacity={0.85}
-                  accessibilityLabel="SOS Emergency. Tap to start countdown, hold to trigger immediately."
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="alert-circle" size={56} color={C.white} />
-                  <Text style={styles.sosText}>SOS</Text>
-                  <Text style={styles.sosSub}>Tap • Hold for instant</Text>
+        <View style={styles.sosPanel}>
+          <Text style={styles.panelLabel}>Emergency</Text>
+          <View style={styles.sosStage}>
+            {countdown !== null ? (
+              <View style={styles.countdownWrap} accessibilityLabel={`SOS activates in ${countdown} seconds`}>
+                <Text style={styles.countdownLabel}>SOS activating in</Text>
+                <Text style={styles.countdownNumber}>{countdown}</Text>
+                <TouchableOpacity style={styles.cancelCountdown} onPress={cancelCountdown} accessibilityLabel="Cancel SOS">
+                  <Ionicons name="close" size={16} color={T.text} />
+                  <Text style={styles.cancelCountdownText}>Cancel</Text>
                 </TouchableOpacity>
-              </Animated.View>
+              </View>
+            ) : isSOSActive ? (
+              <TouchableOpacity
+                style={styles.stopButton}
+                onPress={stopSOS}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityLabel="Stop SOS"
+              >
+                <Ionicons name="stop-circle" size={48} color={T.white} />
+                <Text style={styles.stopButtonText}>SOS ACTIVE</Text>
+                <Text style={styles.stopButtonSub}>Tap when you are safe</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.sosButtonWrap}>
+                <Animated.View style={[styles.sosRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
+                <Animated.View style={{ transform: [{ scale: sosPulse }] }}>
+                  <TouchableOpacity
+                    style={styles.sosButton}
+                    onPress={startSOSCountdown}
+                    onLongPress={executeFullSOS}
+                    delayLongPress={450}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    accessibilityLabel="SOS. Tap to start countdown. Hold to trigger immediately."
+                  >
+                    <Text style={styles.sosText}>SOS</Text>
+                    <Text style={styles.sosSub}>Tap countdown. Hold instant.</Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+            )}
+          </View>
+
+          {emergencyPills.length > 0 && (
+            <View style={styles.pillRow}>
+              {emergencyPills.map((pill) => (
+                <View key={pill.label} style={[styles.safetyPill, pill.active && styles.safetyPillActive]}>
+                  <Ionicons name={pill.icon} size={12} color={pill.active ? T.white : T.textSub} />
+                  <Text style={[styles.safetyPillText, pill.active && { color: T.white }]}>{pill.label}</Text>
+                </View>
+              ))}
             </View>
           )}
         </View>
 
-        {/* ─── EMERGENCY HELPLINES ─── */}
-        <Text style={styles.sectionTitle}>Emergency Helplines</Text>
-        <View style={styles.quickRow}>
-          {quickActions.map((q) => (
+        <View style={styles.statusGrid}>
+          {statusItems.map((item) => (
             <TouchableOpacity
-              key={q.label}
-              style={styles.quickBtn}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); q.onPress(); }}
-              activeOpacity={0.85}
-              accessibilityLabel={`Call ${q.label}, ${q.sub}`}
+              key={item.label}
+              style={styles.statusTile}
+              onPress={item.label === 'Guardians' ? () => navigation.navigate('Guardians') : undefined}
+              activeOpacity={0.82}
+              accessibilityLabel={`${item.label}: ${item.value}`}
             >
-              <View style={[styles.quickIcon, { backgroundColor: `${q.color}22` }]}>
-                <Ionicons name={q.icon} size={22} color={q.color} />
+              <View style={[styles.statusIcon, { backgroundColor: `${item.color}1F` }]}>
+                <Ionicons name={item.icon} size={17} color={item.color} />
               </View>
-              <Text style={styles.quickLabel}>{q.label}</Text>
-              <Text style={styles.quickSub}>{q.sub}</Text>
+              <Text style={styles.statusValue}>{item.value}</Text>
+              <Text style={styles.statusLabel}>{item.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ─── SAFETY TOOLS ─── */}
-        <Text style={styles.sectionTitle}>Safety Tools</Text>
-        <View style={styles.toolGrid}>
-          {tools.map((t) => (
-            <TouchableOpacity
-              key={t.screen}
-              style={styles.toolBtn}
-              onPress={() => navigation.navigate(t.screen)}
-              activeOpacity={0.85}
-              accessibilityLabel={t.label}
-            >
-              <View style={[styles.toolIcon, { backgroundColor: `${t.color}22` }]}>
-                <Ionicons name={t.icon} size={20} color={t.color} />
-              </View>
-              <Text style={styles.toolLabel}>{t.label}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.guardianCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.sectionTitle}>Guardian promise</Text>
+            <Text style={styles.guardianTitle}>
+              {emergencyContacts.length > 0
+                ? 'Your trusted people are one tap away.'
+                : 'No trusted people are connected yet.'}
+            </Text>
+            <Text style={styles.guardianBody}>
+              {emergencyContacts.length > 0
+                ? 'SOS sends location, evidence status and live updates without making you choose features.'
+                : 'Add at least one person so SafeHer can do more than make noise during a crisis.'}
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.smallIconButton} onPress={() => navigation.navigate('Guardians')}>
+            <Ionicons name="people" size={20} color={T.white} />
+          </TouchableOpacity>
         </View>
 
-        <View style={{ height: 24 }} />
+        <View style={styles.helpRow}>
+          <EmergencyDial
+            label="Emergency"
+            number={emergencyNumbers.police}
+            icon="call"
+            color={T.danger}
+            onPress={() => makePhoneCall(emergencyNumbers.police)}
+          />
+          <EmergencyDial
+            label="Women help"
+            number={emergencyNumbers.womenHelpline}
+            icon="woman"
+            color={T.blue}
+            onPress={() => makePhoneCall(emergencyNumbers.womenHelpline)}
+          />
+        </View>
+
+        <Pressable style={styles.toolsHeader} onPress={() => setToolsOpen((value) => !value)}>
+          <View>
+            <Text style={styles.sectionTitle}>More safety tools</Text>
+            <Text style={styles.toolsHint}>Kept one level deeper to keep emergencies simple.</Text>
+          </View>
+          <Ionicons name={toolsOpen ? 'chevron-up' : 'chevron-down'} size={20} color={T.textSub} />
+        </Pressable>
+
+        {toolsOpen && (
+          <View style={styles.toolsList}>
+            {SECONDARY_TOOLS.map((tool) => (
+              <TouchableOpacity
+                key={tool.route}
+                style={styles.toolRow}
+                onPress={() => navigation.navigate(tool.route)}
+                activeOpacity={0.82}
+                accessibilityLabel={tool.label}
+              >
+                <View style={styles.toolIcon}>
+                  <Ionicons name={tool.icon} size={18} color={T.text} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toolTitle}>{tool.label}</Text>
+                  <Text style={styles.toolDescription}>{tool.description}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={T.textHint} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </Animated.ScrollView>
     </View>
   );
 }
 
-// ──────────────────────────────────────────────────────────────
-//  PILL
-// ──────────────────────────────────────────────────────────────
-function Pill({ icon, label, active, activeColor }) {
-  const color = active ? (activeColor || C.primary) : C.textSub;
-  const bg    = active ? `${color}1A` : 'rgba(255,255,255,0.04)';
+function EmergencyDial({ label, number, icon, color, onPress }) {
   return (
-    <View style={[styles.pill, { borderColor: active ? color : C.border, backgroundColor: bg }]}>
-      <Ionicons name={icon} size={10} color={color} />
-      <Text style={[styles.pillText, { color }]}>{label}</Text>
-    </View>
+    <TouchableOpacity style={styles.dialButton} onPress={onPress} activeOpacity={0.82} accessibilityLabel={`Call ${label}`}>
+      <View style={[styles.dialIcon, { backgroundColor: `${color}1F` }]}>
+        <Ionicons name={icon} size={18} color={color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.dialLabel}>{label}</Text>
+        <Text style={styles.dialNumber}>{number}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
-// ──────────────────────────────────────────────────────────────
-//  STEALTH CALCULATOR — duress UI
-// ──────────────────────────────────────────────────────────────
 function StealthCalculator({ onTriggerSOS }) {
-  const SECRET = '112';
+  const secretCode = '112';
   const [display, setDisplay] = useState('0');
-  const [secret,  setSecret]  = useState('');
+  const [secret, setSecret] = useState('');
 
   const safeEval = (expr) => {
     try {
-      const sanitized = expr.replace(/[÷]/g, '/').replace(/[×]/g, '*');
-      if (!/^[0-9+\-*/().% ]+$/.test(sanitized)) return 'Error';
-      const result = new Function(`return (${sanitized})`)();
-      if (!isFinite(result)) return 'Error';
+      if (!/^[0-9+\-*/().% ]+$/.test(expr)) return 'Error';
+      const result = new Function(`return (${expr})`)();
+      if (!Number.isFinite(result)) return 'Error';
       return String(result);
-    } catch { return 'Error'; }
-  };
-
-  const press = (val) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (val === 'C') { setDisplay('0'); setSecret(''); return; }
-    if (val === '=') {
-      if (secret === SECRET) { setDisplay('HELP'); onTriggerSOS(); return; }
-      setDisplay(safeEval(display)); setSecret(''); return;
+    } catch {
+      return 'Error';
     }
-    setDisplay(display === '0' || display === 'Error' || display === 'HELP' ? val : display + val);
-    if (/[0-9]/.test(val)) setSecret(secret + val); else setSecret('');
   };
 
-  const rows = [['7','8','9','÷'],['4','5','6','×'],['1','2','3','-'],['C','0','=','+']];
+  const press = (value) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (value === 'C') {
+      setDisplay('0');
+      setSecret('');
+      return;
+    }
+    if (value === '=') {
+      if (secret === secretCode) {
+        setDisplay('HELP');
+        onTriggerSOS();
+        return;
+      }
+      setDisplay(safeEval(display));
+      setSecret('');
+      return;
+    }
+    setDisplay(display === '0' || display === 'Error' || display === 'HELP' ? value : display + value);
+    setSecret(/[0-9]/.test(value) ? secret + value : '');
+  };
+
+  const rows = [['7', '8', '9', '/'], ['4', '5', '6', '*'], ['1', '2', '3', '-'], ['C', '0', '=', '+']];
 
   return (
     <View style={styles.calc}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <View style={styles.calcDisplay}>
         <Text style={styles.calcText} numberOfLines={1}>{display}</Text>
       </View>
-      {rows.map((row, i) => (
-        <View key={i} style={styles.calcRow}>
-          {row.map((b) => (
+      {rows.map((row) => (
+        <View key={row.join('')} style={styles.calcRow}>
+          {row.map((button) => (
             <TouchableOpacity
-              key={b}
+              key={button}
               style={[
-                styles.calcBtn,
-                /[÷×\-+]/.test(b) && styles.calcOp,
-                b === '=' && styles.calcEq,
-                b === 'C' && styles.calcClr,
+                styles.calcButton,
+                /[/*\-+]/.test(button) && styles.calcOperator,
+                button === '=' && styles.calcEqual,
+                button === 'C' && styles.calcClear,
               ]}
-              onPress={() => press(b)}
-              activeOpacity={0.7}
+              onPress={() => press(button)}
+              activeOpacity={0.72}
             >
-              <Text style={[styles.calcBtnText, /[÷×\-+]/.test(b) && { color: C.primary }]}>{b}</Text>
+              <Text style={[styles.calcButtonText, /[/*\-+]/.test(button) && { color: T.primary }]}>{button}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -507,164 +587,270 @@ function StealthCalculator({ onTriggerSOS }) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────
-//  STYLES
-// ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  rootDanger: { backgroundColor: '#1A0008' },
-  scroll: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 56 : 36, paddingBottom: 80 },
-
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
-  greeting: { fontSize: 13, color: C.textSub, fontWeight: '500', letterSpacing: 0.3 },
-  appName:  { fontSize: 30, color: C.white, fontWeight: '900', marginTop: 2, letterSpacing: -0.5 },
-  iconBtn: {
-    width: 42, height: 42, borderRadius: 14,
-    backgroundColor: C.surface,
-    borderWidth: 1, borderColor: C.border,
-    alignItems: 'center', justifyContent: 'center',
+  root: { flex: 1, backgroundColor: T.bg },
+  rootDanger: { backgroundColor: '#16070A' },
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 56 : 34,
+    paddingBottom: 98,
   },
-
-  banner: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card, borderRadius: 18, padding: 14,
-    borderWidth: 1, borderColor: C.border, marginBottom: 14,
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  brandMark: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: T.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  bannerDanger: { borderColor: 'rgba(255,23,68,0.4)', backgroundColor: 'rgba(255,23,68,0.08)' },
-  bannerIcon:   { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle:  { fontSize: 13, fontWeight: '800', color: C.text },
-  bannerSub:    { fontSize: 11, color: C.textSub, marginTop: 2 },
-
-  statusCard: {
-    backgroundColor: C.card, borderRadius: 22, padding: 18,
-    borderWidth: 1, borderColor: C.border,
-    marginBottom: 14,
-    elevation: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12,
+  brand: { color: T.text, fontSize: 23, fontWeight: '900' },
+  brandSub: { color: T.textSub, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  statusCardDanger: { borderColor: 'rgba(255,23,68,0.5)' },
-  statusRow:        { flexDirection: 'row', alignItems: 'center' },
-  statusIcon:       { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  statusTitle:      { fontSize: 15, fontWeight: '800', color: C.success, letterSpacing: 0.3 },
-  statusSub:        { fontSize: 12, color: C.textSub, marginTop: 3 },
-
-  pills:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14 },
-  pill: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 9, paddingVertical: 5,
-    borderRadius: 10, borderWidth: 1, gap: 4,
+  contextCard: {
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    marginBottom: 16,
   },
-  pillText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
-
-  checkIn: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card, borderRadius: 18, padding: 14,
-    borderWidth: 1, borderColor: C.border, marginBottom: 14,
+  context_safe: { backgroundColor: 'rgba(16,185,129,0.09)', borderColor: 'rgba(16,185,129,0.24)' },
+  context_warning: { backgroundColor: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.28)' },
+  context_danger: { backgroundColor: 'rgba(225,29,72,0.12)', borderColor: 'rgba(225,29,72,0.35)' },
+  contextTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  contextIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
-  checkInOverdue: { borderColor: 'rgba(255,23,68,0.5)' },
-  checkInIcon:    { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  checkInTitle:   { fontSize: 13, fontWeight: '800', color: C.text },
-  checkInSub:     { fontSize: 11, color: C.textSub, marginTop: 2 },
-  checkInBtn:     {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: C.success, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 7,
+  contextIcon_safe: { backgroundColor: 'rgba(16,185,129,0.15)' },
+  contextIcon_warning: { backgroundColor: 'rgba(245,158,11,0.15)' },
+  contextIcon_danger: { backgroundColor: 'rgba(225,29,72,0.18)' },
+  tone_safe: { color: T.success },
+  tone_warning: { color: T.warning },
+  tone_danger: { color: T.danger },
+  contextEyebrow: { fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
+  contextTitle: { color: T.text, fontSize: 24, lineHeight: 30, fontWeight: '900' },
+  contextBody: { color: T.textSub, fontSize: 14, lineHeight: 21, marginTop: 8 },
+  contextAction: {
+    marginTop: 16,
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: T.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
-  checkInBtnText: { fontSize: 11, fontWeight: '900', color: C.white, letterSpacing: 0.5 },
-
-  // SOS
-  sosWrap:        { alignItems: 'center', marginVertical: 22, height: 240 },
-  sosButtonGroup: { alignItems: 'center', justifyContent: 'center' },
+  contextActionDanger: { backgroundColor: T.danger },
+  contextActionText: { color: T.white, fontSize: 15, fontWeight: '900' },
+  sosPanel: {
+    backgroundColor: T.card,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: T.border,
+    marginBottom: 16,
+  },
+  panelLabel: {
+    color: T.textSub,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    marginBottom: 12,
+  },
+  sosStage: {
+    height: Math.min(248, SCREEN_WIDTH * 0.62),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sosButtonWrap: { alignItems: 'center', justifyContent: 'center' },
   sosRing: {
-    position: 'absolute', width: 200, height: 200, borderRadius: 100,
-    borderWidth: 3, borderColor: C.primary,
-  },
-  sosGlow: {
-    position: 'absolute', width: 220, height: 220, borderRadius: 110,
-    backgroundColor: C.primary,
-    shadowColor: C.primary, shadowOpacity: 1, shadowRadius: 30, shadowOffset: { width: 0, height: 0 },
-    elevation: 20,
+    position: 'absolute',
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    borderWidth: 3,
+    borderColor: T.danger,
   },
   sosButton: {
-    width: 200, height: 200, borderRadius: 100,
-    backgroundColor: C.primary,
-    alignItems: 'center', justifyContent: 'center',
-    elevation: 18,
-    shadowColor: C.primary, shadowOpacity: 0.7, shadowRadius: 30, shadowOffset: { width: 0, height: 8 },
+    width: 184,
+    height: 184,
+    borderRadius: 92,
+    backgroundColor: T.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: T.danger,
+    shadowOpacity: 0.42,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 14,
   },
-  sosText: { fontSize: 36, fontWeight: '900', color: C.white, letterSpacing: 4, marginTop: 4 },
-  sosSub:  { fontSize: 11, color: 'rgba(255,255,255,0.85)', fontWeight: '600', marginTop: 4 },
-
-  countdownWrap:   { alignItems: 'center', justifyContent: 'center' },
-  countdownLabel:  { fontSize: 12, color: C.textSub, fontWeight: '800', letterSpacing: 2, marginBottom: 16 },
-  countdownCircle: {
-    width: 200, height: 200, borderRadius: 100,
-    backgroundColor: C.danger, alignItems: 'center', justifyContent: 'center',
-    elevation: 18, shadowColor: C.danger, shadowOpacity: 0.7, shadowRadius: 30,
-    borderWidth: 4, borderColor: 'rgba(255,255,255,0.15)',
+  sosText: { color: T.white, fontSize: 44, fontWeight: '900' },
+  sosSub: { color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '700', marginTop: 8 },
+  countdownWrap: { alignItems: 'center', justifyContent: 'center' },
+  countdownLabel: { color: T.textSub, fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
+  countdownNumber: { color: T.white, fontSize: 86, fontWeight: '900', marginVertical: 4 },
+  cancelCountdown: {
+    minHeight: 46,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
   },
-  countdownNum: { fontSize: 100, fontWeight: '900', color: C.white },
-  cancelBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: C.surface, borderRadius: 16,
-    paddingHorizontal: 32, paddingVertical: 14,
-    borderWidth: 2, borderColor: C.border, marginTop: 22,
+  cancelCountdownText: { color: T.text, fontSize: 14, fontWeight: '800' },
+  stopButton: {
+    width: 184,
+    height: 184,
+    borderRadius: 92,
+    backgroundColor: T.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
-  cancelBtnText: { fontSize: 13, fontWeight: '900', color: C.white, letterSpacing: 1.5 },
-
-  stopSOS: {
-    width: 200, height: 200, borderRadius: 100,
-    backgroundColor: '#444', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 3, borderColor: C.danger,
+  stopButtonText: { color: T.white, fontSize: 18, fontWeight: '900', marginTop: 8 },
+  stopButtonSub: { color: 'rgba(255,255,255,0.76)', fontSize: 11, marginTop: 5, fontWeight: '700' },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  safetyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: T.surface,
   },
-  stopSOSText: { fontSize: 22, fontWeight: '900', color: C.white, marginTop: 4, letterSpacing: 1.5 },
-  stopSOSSub:  { fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '600', marginTop: 4 },
-
-  // Sections
-  sectionTitle: {
-    fontSize: 12, fontWeight: '800', color: C.textSub, letterSpacing: 1.5,
-    marginTop: 8, marginBottom: 12, textTransform: 'uppercase',
+  safetyPillActive: { backgroundColor: T.primary, borderColor: T.primary },
+  safetyPillText: { color: T.textSub, fontSize: 11, fontWeight: '800' },
+  statusGrid: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  statusTile: {
+    flex: 1,
+    minHeight: 104,
+    borderRadius: 18,
+    backgroundColor: T.card,
+    borderWidth: 1,
+    borderColor: T.border,
+    padding: 12,
   },
-
-  // Quick row
-  quickRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginBottom: 22 },
-  quickBtn: {
-    flex: 1, backgroundColor: C.card, borderRadius: 16, padding: 12,
-    alignItems: 'center', borderWidth: 1, borderColor: C.border,
+  statusIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  statusValue: { color: T.text, fontSize: 14, fontWeight: '900' },
+  statusLabel: { color: T.textSub, fontSize: 11, fontWeight: '700', marginTop: 4 },
+  guardianCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.card,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: T.border,
+    marginBottom: 16,
   },
-  quickIcon:  { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  quickLabel: { fontSize: 11, fontWeight: '800', color: C.text, textAlign: 'center' },
-  quickSub:   { fontSize: 9,  color: C.textHint, marginTop: 2 },
-
-  // Tool grid
-  toolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  toolBtn: {
-    width: (W - 60) / 4, alignItems: 'center',
-    backgroundColor: C.card, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 6,
-    borderWidth: 1, borderColor: C.border,
+  sectionTitle: { color: T.textSub, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  guardianTitle: { color: T.text, fontSize: 17, lineHeight: 22, fontWeight: '900', marginTop: 7 },
+  guardianBody: { color: T.textSub, fontSize: 13, lineHeight: 19, marginTop: 6 },
+  smallIconButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.primary,
+    marginLeft: 12,
   },
-  toolIcon:  { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  toolLabel: { fontSize: 10, fontWeight: '700', color: C.text, textAlign: 'center' },
-
-  // Calculator
+  helpRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  dialButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.card,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 17,
+    padding: 12,
+    minHeight: 72,
+  },
+  dialIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  dialLabel: { color: T.text, fontSize: 13, fontWeight: '900' },
+  dialNumber: { color: T.textSub, fontSize: 11, marginTop: 3, fontWeight: '700' },
+  toolsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  toolsHint: { color: T.textHint, fontSize: 12, marginTop: 4 },
+  toolsList: {
+    backgroundColor: T.card,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  toolRow: {
+    minHeight: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+  },
+  toolIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: T.surface,
+    marginRight: 12,
+  },
+  toolTitle: { color: T.text, fontSize: 14, fontWeight: '900' },
+  toolDescription: { color: T.textSub, fontSize: 12, marginTop: 3 },
   calc: {
-    flex: 1, backgroundColor: '#000',
+    flex: 1,
+    backgroundColor: '#000000',
     paddingTop: Platform.OS === 'ios' ? 60 : 30,
     paddingHorizontal: 12,
   },
   calcDisplay: {
-    backgroundColor: '#0A0A0A', borderRadius: 14,
-    padding: 22, marginBottom: 14, alignItems: 'flex-end',
-    minHeight: 100, justifyContent: 'center',
+    minHeight: 104,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    backgroundColor: '#0A0A0A',
+    borderRadius: 14,
+    padding: 22,
+    marginBottom: 14,
   },
-  calcText:    { color: C.white, fontSize: 56, fontWeight: '300' },
-  calcRow:     { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  calcBtn: {
-    flex: 1, aspectRatio: 1.1, backgroundColor: '#1C1C1E',
-    borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+  calcText: { color: T.white, fontSize: 56, fontWeight: '300' },
+  calcRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  calcButton: {
+    flex: 1,
+    aspectRatio: 1.1,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  calcOp:      { backgroundColor: '#2C2C2E' },
-  calcEq:      { backgroundColor: C.primary },
-  calcClr:     { backgroundColor: '#A6A6A6' },
-  calcBtnText: { color: C.white, fontSize: 28, fontWeight: '500' },
+  calcOperator: { backgroundColor: '#2C2C2E' },
+  calcEqual: { backgroundColor: T.primary },
+  calcClear: { backgroundColor: '#A6A6A6' },
+  calcButtonText: { color: T.white, fontSize: 28, fontWeight: '500' },
 });
