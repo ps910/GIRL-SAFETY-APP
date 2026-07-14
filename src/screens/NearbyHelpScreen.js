@@ -13,11 +13,11 @@ import {
 } from '../components/ui';
 
 const PLACE_TYPES = [
-  { id: 'police',   label: 'Police Station', icon: 'shield', color: '#1976D2', query: 'police+station' },
+  { id: 'police',   label: 'Police Station', icon: 'shield', color: T.primary, query: 'police+station' },
   { id: 'hospital', label: 'Hospital',       icon: 'medical', color: T.danger, query: 'hospital' },
-  { id: 'pharmacy', label: 'Pharmacy',       icon: 'medkit', color: '#43A047', query: 'pharmacy' },
+  { id: 'pharmacy', label: 'Pharmacy',       icon: 'medkit', color: T.success, query: 'pharmacy' },
   { id: 'fuel',     label: 'Petrol Station', icon: 'flash', color: T.warning, query: 'petrol+station' },
-  { id: 'cafe',     label: 'Café (24x7)',    icon: 'cafe', color: '#8D6E63',  query: 'cafe+24+hours' },
+  { id: 'cafe',     label: 'Café (24x7)',    icon: 'cafe', color: T.accent,  query: 'cafe+24+hours' },
   { id: 'hotel',    label: 'Hotel',          icon: 'bed', color: T.info, query: 'hotel' },
 ];
 
@@ -113,7 +113,7 @@ export default function NearbyHelpScreen() {
           <CallRow icon="call" color={T.danger} label="Police"            number="100" />
           <CallRow icon="medical" color={T.warning} label="Ambulance"      number="108" />
           <CallRow icon="woman" color={T.info} label="Women Helpline"      number="1091" />
-          <CallRow icon="alert" color="#7C4DFF" label="Disaster Mgmt"      number="108" last />
+          <CallRow icon="alert" color={T.accent} label="Disaster Mgmt"      number="108" last />
         </Card>
       </ScrollView>
     </View>

@@ -17,10 +17,10 @@ const STORAGE_KEY = '@gs_incident_reports';
 
 const TYPES = [
   { id: 'harassment', label: 'Harassment',   icon: 'warning',          color: T.warning },
-  { id: 'stalking',   label: 'Stalking',     icon: 'eye-off',          color: '#7C4DFF' },
+  { id: 'stalking',   label: 'Stalking',     icon: 'eye-off',          color: T.accent },
   { id: 'assault',    label: 'Assault',      icon: 'alert-circle',     color: T.danger },
-  { id: 'theft',      label: 'Theft',        icon: 'lock-closed',      color: '#FF6D00' },
-  { id: 'unsafe',     label: 'Unsafe Place', icon: 'location',         color: '#42A5F5' },
+  { id: 'theft',      label: 'Theft',        icon: 'lock-closed',      color: T.orange },
+  { id: 'unsafe',     label: 'Unsafe Place', icon: 'location',         color: T.info },
   { id: 'other',      label: 'Other',        icon: 'document-text',    color: T.textSub },
 ];
 

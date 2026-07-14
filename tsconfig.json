@@ -23,7 +23,8 @@
       "@context/*": ["src/context/*"],
       "@constants/*": ["src/constants/*"],
       "@utils/*": ["src/utils/*"],
-      "@config/*": ["src/config/*"]
+      "@config/*": ["src/config/*"],
+      "@safeher/shared": ["packages/shared/src"]
     }
   },
   "include": [
@@ -40,6 +41,7 @@
     "android",
     "ios",
     "functions",
+    "apps",
     "*.backup",
     "*.bak"
   ]

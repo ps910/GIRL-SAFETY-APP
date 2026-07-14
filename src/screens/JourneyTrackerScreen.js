@@ -64,7 +64,7 @@ export default function JourneyTrackerScreen() {
 
         <Card style={[journeyOverdue && { borderColor: 'rgba(255,23,68,0.5)' }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-            <View style={[styles.bigIcon, { backgroundColor: journeyOverdue ? '#FF174422' : T.primaryGlow }]}>
+            <View style={[styles.bigIcon, { backgroundColor: journeyOverdue ? `${T.danger}22` : T.primaryGlow }]}>
               <Ionicons name="navigate" size={26} color={journeyOverdue ? T.danger : T.primary} />
             </View>
             <View style={{ flex: 1, marginLeft: 14 }}>
@@ -140,7 +140,7 @@ export default function JourneyTrackerScreen() {
         journeyHistory?.slice(0, 10).map((j, i) => (
           <Card key={i}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={[styles.histIcon, { backgroundColor: j.status === 'overdue' ? '#FF174422' : '#00E67622' }]}>
+              <View style={[styles.histIcon, { backgroundColor: j.status === 'overdue' ? `${T.danger}22` : `${T.success}22` }]}>
                 <Ionicons name={j.status === 'overdue' ? 'alert' : 'checkmark'} size={16} color={j.status === 'overdue' ? T.danger : T.success} />
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>

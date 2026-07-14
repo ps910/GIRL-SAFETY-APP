@@ -1,10 +1,12 @@
 /**
- * HomeScreen - SafeHer command center
+ * HomeScreen — SafeHer Command Center (Midnight Indigo)
  *
  * Product model:
  * - SOS is always unmistakable.
  * - The rest of the screen answers one question: what should I do now?
  * - Secondary tools exist, but they do not compete with the emergency path.
+ *
+ * Design: Midnight Indigo palette, Space Grotesk headings, DM Sans body.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -27,18 +29,19 @@ import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { useEmergency } from '../context/EmergencyContext';
 import { getLocalEmergencyNumbers, makePhoneCall, vibrateEmergency } from '../utils/helpers';
-import { T } from '../components/ui';
+import { SOSButton, ProtectionTile, ContextCard, StatusDot, Pill, FloatingOrb, T } from '../components/ui';
+import { colors, spacing, radius } from '@safeher/shared';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SOS_COUNTDOWN_DEFAULT = 5;
 
 const SECONDARY_TOOLS = [
-  { icon: 'call', label: 'Fake call', route: 'FakeCall', description: 'Create an exit excuse.' },
-  { icon: 'medkit', label: 'Nearby help', route: 'NearbyHelp', description: 'Hospitals, police and safe places.' },
-  { icon: 'lock-closed', label: 'Evidence vault', route: 'EvidenceVault', description: 'Store protected recordings.' },
-  { icon: 'document-text', label: 'Report incident', route: 'IncidentReport', description: 'Create a structured record.' },
-  { icon: 'eye-off', label: 'Hidden camera scan', route: 'HiddenCamera', description: 'Check risky rooms discreetly.' },
-  { icon: 'shield-half', label: 'Self defense', route: 'SelfDefense', description: 'Short, practical guidance.' },
+  { icon: 'call', label: 'Fake call', route: 'FakeCall', description: 'Create an exit excuse.', color: colors.accent },
+  { icon: 'medkit', label: 'Nearby help', route: 'NearbyHelp', description: 'Hospitals, police and safe places.', color: colors.teal },
+  { icon: 'lock-closed', label: 'Evidence vault', route: 'EvidenceVault', description: 'Store protected recordings.', color: colors.info },
+  { icon: 'document-text', label: 'Report incident', route: 'IncidentReport', description: 'Create a structured record.', color: colors.warning },
+  { icon: 'eye-off', label: 'Hidden camera scan', route: 'HiddenCamera', description: 'Check risky rooms discreetly.', color: colors.orange },
+  { icon: 'shield-half', label: 'Self defense', route: 'SelfDefense', description: 'Short, practical guidance.', color: colors.success },
 ];
 
 export default function HomeScreen() {
@@ -72,24 +75,10 @@ export default function HomeScreen() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const countdownRef = useRef(null);
   const fadeIn = useRef(new Animated.Value(0)).current;
-  const sosPulse = useRef(new Animated.Value(1)).current;
-  const ring = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(fadeIn, { toValue: 1, duration: 320, useNativeDriver: true }).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(sosPulse, { toValue: 1.035, duration: 1200, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
-        Animated.timing(sosPulse, { toValue: 1, duration: 1200, useNativeDriver: true, easing: Easing.inOut(Easing.quad) }),
-      ]),
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(ring, { toValue: 1, duration: 1900, useNativeDriver: true, easing: Easing.out(Easing.quad) }),
-        Animated.timing(ring, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ]),
-    ).start();
-  }, [fadeIn, ring, sosPulse]);
+    Animated.timing(fadeIn, { toValue: 1, duration: 400, useNativeDriver: true, easing: Easing.out(Easing.quad) }).start();
+  }, [fadeIn]);
 
   useEffect(() => {
     (async () => {
@@ -172,11 +161,13 @@ export default function HomeScreen() {
     cancelSOS();
   }, [cancelSOS]);
 
+  // ── Context-aware state machine ──
   const homeState = useMemo(() => {
     const now = new Date();
     const hour = now.getHours();
     const isNight = hour >= 19 || hour < 5;
     const isMorning = hour >= 5 && hour < 12;
+    const isEvening = hour >= 17 && hour < 19;
     const guardianActive = isLiveSharing || isBackgroundTracking;
     const hasGuardians = emergencyContacts.length > 0;
     const highRiskHeuristic = isNight && !activeJourney && !guardianActive;
@@ -190,6 +181,7 @@ export default function HomeScreen() {
         cta: 'Stop SOS',
         action: stopSOS,
         icon: 'warning',
+        accentColor: colors.danger,
       };
     }
 
@@ -202,6 +194,7 @@ export default function HomeScreen() {
         cta: 'I arrived safely',
         action: completeJourney,
         icon: 'time',
+        accentColor: colors.danger,
       };
     }
 
@@ -215,6 +208,7 @@ export default function HomeScreen() {
         cta: 'I arrived safely',
         action: completeJourney,
         icon: 'navigate',
+        accentColor: colors.teal,
       };
     }
 
@@ -227,6 +221,7 @@ export default function HomeScreen() {
         cta: 'Add guardians',
         action: () => navigation.navigate('Guardians'),
         icon: 'people',
+        accentColor: colors.warning,
       };
     }
 
@@ -239,6 +234,7 @@ export default function HomeScreen() {
         cta: 'Start Safe Journey',
         action: () => navigation.navigate('Journey'),
         icon: 'moon',
+        accentColor: colors.warning,
       };
     }
 
@@ -251,17 +247,22 @@ export default function HomeScreen() {
         cta: 'View guardians',
         action: () => navigation.navigate('Guardians'),
         icon: 'shield-checkmark',
+        accentColor: colors.success,
       };
     }
 
+    const greeting = isMorning ? 'Good morning' : isEvening ? 'Good evening' : 'Protected';
+    const message = isMorning ? 'SafeHer is ready for your day.' : 'You are protected.';
+
     return {
       tone: 'safe',
-      eyebrow: isMorning ? 'Good morning' : 'Protected',
-      title: isMorning ? 'SafeHer is ready for your day.' : 'You are protected.',
+      eyebrow: greeting,
+      title: message,
       body: `${emergencyContacts.length} guardian${emergencyContacts.length === 1 ? '' : 's'} ready. Start a journey when you travel, or press SOS if you need help.`,
       cta: 'Start Safe Journey',
       action: () => navigation.navigate('Journey'),
       icon: 'shield-checkmark',
+      accentColor: colors.primary,
     };
   }, [
     activeJourney,
@@ -276,6 +277,7 @@ export default function HomeScreen() {
     stopSOS,
   ]);
 
+  // ── Protection status tiles ──
   const statusItems = useMemo(() => {
     const timeSinceCheckIn = Math.max(0, Math.floor((Date.now() - lastCheckIn.getTime()) / 60000));
     return [
@@ -283,23 +285,27 @@ export default function HomeScreen() {
         label: 'Guardians',
         value: emergencyContacts.length > 0 ? `${emergencyContacts.length} ready` : 'Add now',
         icon: 'people',
-        color: emergencyContacts.length > 0 ? T.success : T.warning,
+        color: emergencyContacts.length > 0 ? colors.success : colors.warning,
+        active: emergencyContacts.length > 0,
       },
       {
         label: 'Location',
         value: currentLocation ? 'Verified' : 'Waiting',
         icon: 'location',
-        color: currentLocation ? T.blue : T.warning,
+        color: currentLocation ? colors.info : colors.warning,
+        active: !!currentLocation,
       },
       {
         label: 'Check-in',
         value: settings.inactivitySOSEnabled ? `${timeSinceCheckIn}m ago` : 'Optional',
         icon: 'checkmark-circle',
-        color: checkInOverdue ? T.danger : T.success,
+        color: checkInOverdue ? colors.danger : colors.success,
+        active: !checkInOverdue,
       },
     ];
   }, [checkInOverdue, currentLocation, emergencyContacts.length, lastCheckIn, settings.inactivitySOSEnabled]);
 
+  // ── Emergency feature pills ──
   const emergencyPills = [
     settings.shakeToSOS && { icon: 'phone-portrait', label: 'Shake SOS', active: true },
     settings.sirenEnabled && { icon: 'volume-high', label: sirenActive ? 'Siren on' : 'Siren ready', active: sirenActive },
@@ -308,22 +314,25 @@ export default function HomeScreen() {
     isLiveTracking && { icon: 'navigate', label: 'Live tracking', active: true },
   ].filter(Boolean);
 
-  const ringScale = ring.interpolate({ inputRange: [0, 1], outputRange: [1, 1.38] });
-  const ringOpacity = ring.interpolate({ inputRange: [0, 0.65, 1], outputRange: [0.34, 0.12, 0] });
-
   if (stealthMode) return <StealthCalculator onTriggerSOS={executeFullSOS} />;
 
   return (
     <View style={[styles.root, isSOSActive && styles.rootDanger]}>
-      <StatusBar barStyle="light-content" backgroundColor={T.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={isSOSActive ? '#0F0A0C' : colors.bg} />
+
+      {/* Subtle background orbs */}
+      <FloatingOrb size={200} color={colors.primary} startX={-60} startY={80} duration={12000} />
+      <FloatingOrb size={160} color={colors.accent} startX={SCREEN_WIDTH - 100} startY={300} duration={15000} />
+
       <Animated.ScrollView
         style={{ opacity: fadeIn }}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {/* ── Header ── */}
         <View style={styles.header}>
           <View style={styles.brandMark}>
-            <Ionicons name="shield-checkmark" size={22} color={T.white} />
+            <Ionicons name="shield-checkmark" size={22} color={colors.white} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.brand}>SafeHer</Text>
@@ -334,32 +343,42 @@ export default function HomeScreen() {
             onPress={() => navigation.navigate('Settings')}
             accessibilityLabel="Open settings"
           >
-            <Ionicons name="settings-outline" size={20} color={T.text} />
+            <Ionicons name="settings-outline" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
 
+        {/* ── Context Card ── */}
         <View style={[styles.contextCard, styles[`context_${homeState.tone}`]]}>
           <View style={styles.contextTop}>
-            <View style={[styles.contextIcon, styles[`contextIcon_${homeState.tone}`]]}>
-              <Ionicons name={homeState.icon} size={22} color={styles[`tone_${homeState.tone}`].color} />
+            <View style={[styles.contextIcon, { backgroundColor: `${homeState.accentColor}1F` }]}>
+              <Ionicons name={homeState.icon} size={22} color={homeState.accentColor} />
             </View>
-            <Text style={[styles.contextEyebrow, styles[`tone_${homeState.tone}`]]}>{homeState.eyebrow}</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <StatusDot color={homeState.accentColor} pulse={homeState.tone === 'danger'} size={6} />
+                <Text style={[styles.contextEyebrow, { color: homeState.accentColor }]}>{homeState.eyebrow}</Text>
+              </View>
+            </View>
           </View>
           <Text style={styles.contextTitle}>{homeState.title}</Text>
           <Text style={styles.contextBody}>{homeState.body}</Text>
           <TouchableOpacity
-            style={[styles.contextAction, homeState.tone === 'danger' && styles.contextActionDanger]}
+            style={[
+              styles.contextAction,
+              { backgroundColor: homeState.tone === 'danger' ? colors.danger : colors.primary },
+            ]}
             onPress={homeState.action}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel={homeState.cta}
           >
             <Text style={styles.contextActionText}>{homeState.cta}</Text>
-            <Ionicons name="arrow-forward" size={17} color={T.white} />
+            <Ionicons name="arrow-forward" size={17} color={colors.white} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.sosPanel}>
+        {/* ── SOS Panel ── */}
+        <View style={[styles.sosPanel, isSOSActive && styles.sosPanelActive]}>
           <Text style={styles.panelLabel}>Emergency</Text>
           <View style={styles.sosStage}>
             {countdown !== null ? (
@@ -367,39 +386,16 @@ export default function HomeScreen() {
                 <Text style={styles.countdownLabel}>SOS activating in</Text>
                 <Text style={styles.countdownNumber}>{countdown}</Text>
                 <TouchableOpacity style={styles.cancelCountdown} onPress={cancelCountdown} accessibilityLabel="Cancel SOS">
-                  <Ionicons name="close" size={16} color={T.text} />
+                  <Ionicons name="close" size={16} color={colors.text} />
                   <Text style={styles.cancelCountdownText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
             ) : isSOSActive ? (
-              <TouchableOpacity
-                style={styles.stopButton}
-                onPress={stopSOS}
-                activeOpacity={0.88}
-                accessibilityRole="button"
-                accessibilityLabel="Stop SOS"
-              >
-                <Ionicons name="stop-circle" size={48} color={T.white} />
-                <Text style={styles.stopButtonText}>SOS ACTIVE</Text>
-                <Text style={styles.stopButtonSub}>Tap when you are safe</Text>
-              </TouchableOpacity>
+              <SOSButton onPress={stopSOS} isActive={true} />
             ) : (
-              <View style={styles.sosButtonWrap}>
-                <Animated.View style={[styles.sosRing, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
-                <Animated.View style={{ transform: [{ scale: sosPulse }] }}>
-                  <TouchableOpacity
-                    style={styles.sosButton}
-                    onPress={startSOSCountdown}
-                    onLongPress={executeFullSOS}
-                    delayLongPress={450}
-                    activeOpacity={0.88}
-                    accessibilityRole="button"
-                    accessibilityLabel="SOS. Tap to start countdown. Hold to trigger immediately."
-                  >
-                    <Text style={styles.sosText}>SOS</Text>
-                    <Text style={styles.sosSub}>Tap countdown. Hold instant.</Text>
-                  </TouchableOpacity>
-                </Animated.View>
+              <View style={{ alignItems: 'center' }}>
+                <SOSButton onPress={startSOSCountdown} isActive={false} />
+                <Text style={styles.sosHint}>Tap countdown · Hold instant</Text>
               </View>
             )}
           </View>
@@ -407,33 +403,50 @@ export default function HomeScreen() {
           {emergencyPills.length > 0 && (
             <View style={styles.pillRow}>
               {emergencyPills.map((pill) => (
-                <View key={pill.label} style={[styles.safetyPill, pill.active && styles.safetyPillActive]}>
-                  <Ionicons name={pill.icon} size={12} color={pill.active ? T.white : T.textSub} />
-                  <Text style={[styles.safetyPillText, pill.active && { color: T.white }]}>{pill.label}</Text>
-                </View>
+                <Pill
+                  key={pill.label}
+                  icon={pill.icon}
+                  label={pill.label}
+                  color={pill.active ? colors.primary : colors.textSub}
+                  active={pill.active}
+                />
               ))}
+            </View>
+          )}
+
+          {/* SOS Delivery Status (visible during/after SOS) */}
+          {isSOSActive && sosDeliveryStatus && sosDeliveryStatus.state !== 'idle' && (
+            <View style={styles.deliveryStatus}>
+              <StatusDot
+                color={
+                  sosDeliveryStatus.state === 'sent' ? colors.success
+                  : sosDeliveryStatus.state === 'sending' ? colors.warning
+                  : sosDeliveryStatus.state === 'failed' ? colors.danger
+                  : colors.warning
+                }
+                pulse={sosDeliveryStatus.state === 'sending'}
+                size={8}
+              />
+              <Text style={styles.deliveryText}>{sosDeliveryStatus.message}</Text>
             </View>
           )}
         </View>
 
+        {/* ── Protection Status Grid ── */}
         <View style={styles.statusGrid}>
           {statusItems.map((item) => (
-            <TouchableOpacity
+            <ProtectionTile
               key={item.label}
-              style={styles.statusTile}
-              onPress={item.label === 'Guardians' ? () => navigation.navigate('Guardians') : undefined}
-              activeOpacity={0.82}
-              accessibilityLabel={`${item.label}: ${item.value}`}
-            >
-              <View style={[styles.statusIcon, { backgroundColor: `${item.color}1F` }]}>
-                <Ionicons name={item.icon} size={17} color={item.color} />
-              </View>
-              <Text style={styles.statusValue}>{item.value}</Text>
-              <Text style={styles.statusLabel}>{item.label}</Text>
-            </TouchableOpacity>
+              icon={item.icon}
+              label={item.label}
+              value={item.value}
+              color={item.color}
+              active={item.active}
+            />
           ))}
         </View>
 
+        {/* ── Guardian Promise Card ── */}
         <View style={styles.guardianCard}>
           <View style={{ flex: 1 }}>
             <Text style={styles.sectionTitle}>Guardian promise</Text>
@@ -448,63 +461,70 @@ export default function HomeScreen() {
                 : 'Add at least one person so SafeHer can do more than make noise during a crisis.'}
             </Text>
           </View>
-          <TouchableOpacity style={styles.smallIconButton} onPress={() => navigation.navigate('Guardians')}>
-            <Ionicons name="people" size={20} color={T.white} />
+          <TouchableOpacity style={styles.guardianNavBtn} onPress={() => navigation.navigate('Guardians')}>
+            <Ionicons name="people" size={20} color={colors.white} />
           </TouchableOpacity>
         </View>
 
+        {/* ── Emergency Helplines ── */}
         <View style={styles.helpRow}>
           <EmergencyDial
             label="Emergency"
             number={emergencyNumbers.police}
             icon="call"
-            color={T.danger}
+            color={colors.danger}
             onPress={() => makePhoneCall(emergencyNumbers.police)}
           />
           <EmergencyDial
             label="Women help"
             number={emergencyNumbers.womenHelpline}
             icon="woman"
-            color={T.blue}
+            color={colors.info}
             onPress={() => makePhoneCall(emergencyNumbers.womenHelpline)}
           />
         </View>
 
+        {/* ── More Safety Tools ── */}
         <Pressable style={styles.toolsHeader} onPress={() => setToolsOpen((value) => !value)}>
           <View>
             <Text style={styles.sectionTitle}>More safety tools</Text>
             <Text style={styles.toolsHint}>Kept one level deeper to keep emergencies simple.</Text>
           </View>
-          <Ionicons name={toolsOpen ? 'chevron-up' : 'chevron-down'} size={20} color={T.textSub} />
+          <View style={styles.toolsChevron}>
+            <Ionicons name={toolsOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSub} />
+          </View>
         </Pressable>
 
         {toolsOpen && (
           <View style={styles.toolsList}>
-            {SECONDARY_TOOLS.map((tool) => (
+            {SECONDARY_TOOLS.map((tool, index) => (
               <TouchableOpacity
                 key={tool.route}
-                style={styles.toolRow}
+                style={[styles.toolRow, index === SECONDARY_TOOLS.length - 1 && { borderBottomWidth: 0 }]}
                 onPress={() => navigation.navigate(tool.route)}
                 activeOpacity={0.82}
                 accessibilityLabel={tool.label}
               >
-                <View style={styles.toolIcon}>
-                  <Ionicons name={tool.icon} size={18} color={T.text} />
+                <View style={[styles.toolIcon, { backgroundColor: `${tool.color}1F` }]}>
+                  <Ionicons name={tool.icon} size={18} color={tool.color} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.toolTitle}>{tool.label}</Text>
                   <Text style={styles.toolDescription}>{tool.description}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={T.textHint} />
+                <Ionicons name="chevron-forward" size={16} color={colors.textHint} />
               </TouchableOpacity>
             ))}
           </View>
         )}
+
+        <View style={{ height: 24 }} />
       </Animated.ScrollView>
     </View>
   );
 }
 
+// ── Emergency Dial Button ──────────────────────────────────
 function EmergencyDial({ label, number, icon, color, onPress }) {
   return (
     <TouchableOpacity style={styles.dialButton} onPress={onPress} activeOpacity={0.82} accessibilityLabel={`Call ${label}`}>
@@ -515,10 +535,14 @@ function EmergencyDial({ label, number, icon, color, onPress }) {
         <Text style={styles.dialLabel}>{label}</Text>
         <Text style={styles.dialNumber}>{number}</Text>
       </View>
+      <View style={[styles.dialCallIcon, { backgroundColor: `${color}1A` }]}>
+        <Ionicons name="call" size={14} color={color} />
+      </View>
     </TouchableOpacity>
   );
 }
 
+// ── Stealth Calculator Mode ────────────────────────────────
 function StealthCalculator({ onTriggerSOS }) {
   const secretCode = '112';
   const [display, setDisplay] = useState('0');
@@ -578,7 +602,7 @@ function StealthCalculator({ onTriggerSOS }) {
               onPress={() => press(button)}
               activeOpacity={0.72}
             >
-              <Text style={[styles.calcButtonText, /[/*\-+]/.test(button) && { color: T.primary }]}>{button}</Text>
+              <Text style={[styles.calcButtonText, /[/*\-+]/.test(button) && { color: colors.primary }]}>{button}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -587,243 +611,247 @@ function StealthCalculator({ onTriggerSOS }) {
   );
 }
 
+// ── Styles — Midnight Indigo ───────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: T.bg },
-  rootDanger: { backgroundColor: '#16070A' },
+  root: { flex: 1, backgroundColor: colors.bg },
+  rootDanger: { backgroundColor: '#0F0A0C' },
   scroll: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.xl,
     paddingTop: Platform.OS === 'ios' ? 56 : 34,
     paddingBottom: 98,
   },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+
+  // Header
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   brandMark: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: T.primary,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    ...Platform.select({
+      ios: { shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+      android: { elevation: 6 },
+    }),
   },
-  brand: { color: T.text, fontSize: 23, fontWeight: '900' },
-  brandSub: { color: T.textSub, fontSize: 12, fontWeight: '600', marginTop: 2 },
+  brand: { color: colors.text, fontSize: 23, fontWeight: '800', letterSpacing: -0.3 },
+  brandSub: { color: colors.textSub, fontSize: 12, fontWeight: '500', marginTop: 2 },
   iconButton: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: T.surface,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // Context Card
   contextCard: {
-    borderRadius: 20,
+    borderRadius: radius.xl,
     padding: 18,
     borderWidth: 1,
     marginBottom: 16,
   },
-  context_safe: { backgroundColor: 'rgba(16,185,129,0.09)', borderColor: 'rgba(16,185,129,0.24)' },
-  context_warning: { backgroundColor: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.28)' },
-  context_danger: { backgroundColor: 'rgba(225,29,72,0.12)', borderColor: 'rgba(225,29,72,0.35)' },
-  contextTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  context_safe: {
+    backgroundColor: 'rgba(16, 185, 129, 0.06)',
+    borderColor: 'rgba(16, 185, 129, 0.20)',
+  },
+  context_warning: {
+    backgroundColor: 'rgba(245, 158, 11, 0.06)',
+    borderColor: 'rgba(245, 158, 11, 0.22)',
+  },
+  context_danger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.30)',
+  },
+  contextTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 },
   contextIcon: {
     width: 40,
     height: 40,
-    borderRadius: 13,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
-  contextIcon_safe: { backgroundColor: 'rgba(16,185,129,0.15)' },
-  contextIcon_warning: { backgroundColor: 'rgba(245,158,11,0.15)' },
-  contextIcon_danger: { backgroundColor: 'rgba(225,29,72,0.18)' },
-  tone_safe: { color: T.success },
-  tone_warning: { color: T.warning },
-  tone_danger: { color: T.danger },
-  contextEyebrow: { fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  contextTitle: { color: T.text, fontSize: 24, lineHeight: 30, fontWeight: '900' },
-  contextBody: { color: T.textSub, fontSize: 14, lineHeight: 21, marginTop: 8 },
+  contextEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  contextTitle: { color: colors.text, fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3 },
+  contextBody: { color: colors.textSub, fontSize: 14, lineHeight: 21, marginTop: 8 },
   contextAction: {
     marginTop: 16,
     minHeight: 48,
-    borderRadius: 14,
-    backgroundColor: T.primary,
+    borderRadius: radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
-  contextActionDanger: { backgroundColor: T.danger },
-  contextActionText: { color: T.white, fontSize: 15, fontWeight: '900' },
+  contextActionText: { color: colors.white, fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
+
+  // SOS Panel
   sosPanel: {
-    backgroundColor: T.card,
-    borderRadius: 22,
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
     padding: 18,
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: colors.border,
     marginBottom: 16,
   },
+  sosPanelActive: {
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+  },
   panelLabel: {
-    color: T.textSub,
+    color: colors.textSub,
     fontSize: 11,
-    fontWeight: '900',
+    fontWeight: '700',
     textTransform: 'uppercase',
+    letterSpacing: 1.2,
     marginBottom: 12,
   },
   sosStage: {
-    height: Math.min(248, SCREEN_WIDTH * 0.62),
+    minHeight: Math.min(260, SCREEN_WIDTH * 0.65),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sosButtonWrap: { alignItems: 'center', justifyContent: 'center' },
-  sosRing: {
-    position: 'absolute',
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    borderWidth: 3,
-    borderColor: T.danger,
+  sosHint: {
+    color: colors.textHint,
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 16,
+    letterSpacing: 0.2,
   },
-  sosButton: {
-    width: 184,
-    height: 184,
-    borderRadius: 92,
-    backgroundColor: T.danger,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: T.danger,
-    shadowOpacity: 0.42,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 14,
-  },
-  sosText: { color: T.white, fontSize: 44, fontWeight: '900' },
-  sosSub: { color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '700', marginTop: 8 },
   countdownWrap: { alignItems: 'center', justifyContent: 'center' },
-  countdownLabel: { color: T.textSub, fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  countdownNumber: { color: T.white, fontSize: 86, fontWeight: '900', marginVertical: 4 },
+  countdownLabel: { color: colors.textSub, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  countdownNumber: { color: colors.white, fontSize: 86, fontWeight: '800', marginVertical: 4 },
   cancelCountdown: {
     minHeight: 46,
     paddingHorizontal: 22,
-    borderRadius: 14,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: T.border,
-    backgroundColor: T.surface,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
   },
-  cancelCountdownText: { color: T.text, fontSize: 14, fontWeight: '800' },
-  stopButton: {
-    width: 184,
-    height: 184,
-    borderRadius: 92,
-    backgroundColor: T.danger,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.18)',
-  },
-  stopButtonText: { color: T.white, fontSize: 18, fontWeight: '900', marginTop: 8 },
-  stopButtonSub: { color: 'rgba(255,255,255,0.76)', fontSize: 11, marginTop: 5, fontWeight: '700' },
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  safetyPill: {
+  cancelCountdownText: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+
+  // Delivery status
+  deliveryStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: T.border,
-    backgroundColor: T.surface,
-  },
-  safetyPillActive: { backgroundColor: T.primary, borderColor: T.primary },
-  safetyPillText: { color: T.textSub, fontSize: 11, fontWeight: '800' },
-  statusGrid: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  statusTile: {
-    flex: 1,
-    minHeight: 104,
-    borderRadius: 18,
-    backgroundColor: T.card,
-    borderWidth: 1,
-    borderColor: T.border,
+    gap: 8,
+    marginTop: 12,
     padding: 12,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
   },
-  statusIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  statusValue: { color: T.text, fontSize: 14, fontWeight: '900' },
-  statusLabel: { color: T.textSub, fontSize: 11, fontWeight: '700', marginTop: 4 },
+  deliveryText: { color: colors.textSub, fontSize: 13, fontWeight: '500', flex: 1 },
+
+  // Protection status
+  statusGrid: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+
+  // Guardian card
   guardianCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: T.card,
-    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
     padding: 16,
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: colors.border,
     marginBottom: 16,
   },
-  sectionTitle: { color: T.textSub, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
-  guardianTitle: { color: T.text, fontSize: 17, lineHeight: 22, fontWeight: '900', marginTop: 7 },
-  guardianBody: { color: T.textSub, fontSize: 13, lineHeight: 19, marginTop: 6 },
-  smallIconButton: {
+  sectionTitle: {
+    color: colors.textSub,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  guardianTitle: { color: colors.text, fontSize: 17, lineHeight: 22, fontWeight: '700', marginTop: 7 },
+  guardianBody: { color: colors.textSub, fontSize: 13, lineHeight: 19, marginTop: 6 },
+  guardianNavBtn: {
     width: 46,
     height: 46,
-    borderRadius: 15,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: T.primary,
+    backgroundColor: colors.primary,
     marginLeft: 12,
   },
+
+  // Emergency dial
   helpRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   dialButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: T.card,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 17,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
     padding: 12,
     minHeight: 72,
   },
-  dialIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  dialLabel: { color: T.text, fontSize: 13, fontWeight: '900' },
-  dialNumber: { color: T.textSub, fontSize: 11, marginTop: 3, fontWeight: '700' },
+  dialIcon: { width: 36, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  dialLabel: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  dialNumber: { color: colors.textSub, fontSize: 11, marginTop: 3, fontWeight: '500' },
+  dialCallIcon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+
+  // Tools section
   toolsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
   },
-  toolsHint: { color: T.textHint, fontSize: 12, marginTop: 4 },
+  toolsHint: { color: colors.textHint, fontSize: 12, marginTop: 4 },
+  toolsChevron: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   toolsList: {
-    backgroundColor: T.card,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: T.border,
-    borderRadius: 18,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
     overflow: 'hidden',
+    marginTop: 8,
   },
   toolRow: {
-    minHeight: 70,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     borderBottomWidth: 1,
-    borderBottomColor: T.border,
+    borderBottomColor: colors.borderSubtle,
   },
   toolIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: T.surface,
     marginRight: 12,
   },
-  toolTitle: { color: T.text, fontSize: 14, fontWeight: '900' },
-  toolDescription: { color: T.textSub, fontSize: 12, marginTop: 3 },
+  toolTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  toolDescription: { color: colors.textSub, fontSize: 12, marginTop: 3 },
+
+  // Stealth calculator
   calc: {
     flex: 1,
     backgroundColor: '#000000',
@@ -834,23 +862,23 @@ const styles = StyleSheet.create({
     minHeight: 104,
     justifyContent: 'center',
     alignItems: 'flex-end',
-    backgroundColor: '#0A0A0A',
-    borderRadius: 14,
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
     padding: 22,
     marginBottom: 14,
   },
-  calcText: { color: T.white, fontSize: 56, fontWeight: '300' },
+  calcText: { color: colors.white, fontSize: 56, fontWeight: '300' },
   calcRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   calcButton: {
     flex: 1,
     aspectRatio: 1.1,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 16,
+    backgroundColor: colors.bgElevated,
+    borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  calcOperator: { backgroundColor: '#2C2C2E' },
-  calcEqual: { backgroundColor: T.primary },
-  calcClear: { backgroundColor: '#A6A6A6' },
-  calcButtonText: { color: T.white, fontSize: 28, fontWeight: '500' },
+  calcOperator: { backgroundColor: colors.card },
+  calcEqual: { backgroundColor: colors.primary },
+  calcClear: { backgroundColor: colors.textHint },
+  calcButtonText: { color: colors.white, fontSize: 28, fontWeight: '500' },
 });

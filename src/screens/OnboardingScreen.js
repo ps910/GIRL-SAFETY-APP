@@ -1,8 +1,10 @@
 /**
- * SafeHer Onboarding
+ * OnboardingScreen — SafeHer Onboarding Flow (Midnight Indigo)
  *
  * First-run goal: make a new user confident in under 60 seconds.
  * The flow asks only for what improves the core safety promise.
+ *
+ * Design: Midnight Indigo color scheme, Space Grotesk headings, DM Sans body text.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -21,7 +23,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useEmergency } from '../context/EmergencyContext';
-import { T } from '../components/ui';
+import { colors, spacing, radius, typography } from '@safeher/shared';
+import { PrimaryBtn, GhostBtn, FloatingOrb, StatusDot } from '../components/ui';
 
 const ONBOARD_KEY = '@gs_onboarded';
 
@@ -122,10 +125,12 @@ export default function OnboardingScreen({ onComplete }) {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={T.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      <FloatingOrb size={200} color={colors.primary} startX={-40} startY={100} duration={14000} />
+
       <View style={styles.topBar}>
         <View style={styles.brandMark}>
-          <Ionicons name="shield-checkmark" size={22} color={T.white} />
+          <Ionicons name="shield-checkmark" size={22} color={colors.white} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.brand}>SafeHer</Text>
@@ -133,7 +138,7 @@ export default function OnboardingScreen({ onComplete }) {
         </View>
         {step > 0 && (
           <TouchableOpacity style={styles.backButton} onPress={back} accessibilityLabel="Back">
-            <Ionicons name="chevron-back" size={20} color={T.text} />
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -186,7 +191,7 @@ export default function OnboardingScreen({ onComplete }) {
                   value={guardianName}
                   onChangeText={setGuardianName}
                   placeholder="Guardian name"
-                  placeholderTextColor={T.textHint}
+                  placeholderTextColor={colors.textHint}
                   style={styles.input}
                   autoCapitalize="words"
                   accessibilityLabel="Guardian name"
@@ -195,7 +200,7 @@ export default function OnboardingScreen({ onComplete }) {
                   value={guardianPhone}
                   onChangeText={setGuardianPhone}
                   placeholder="+91 98765 43210"
-                  placeholderTextColor={T.textHint}
+                  placeholderTextColor={colors.textHint}
                   style={styles.input}
                   keyboardType="phone-pad"
                   accessibilityLabel="Guardian phone number"
@@ -244,16 +249,24 @@ export default function OnboardingScreen({ onComplete }) {
       </View>
 
       <View style={styles.actions}>
-        {step === 0 && <PrimaryAction label="Set up protection" onPress={next} />}
+        {step === 0 && <PrimaryBtn onPress={next}>Set up protection</PrimaryBtn>}
         {step === 1 && (
           <>
-            <PrimaryAction label="Allow location" onPress={requestLocation} />
-            <SecondaryAction label="I'll review later" onPress={next} />
+            <PrimaryBtn onPress={requestLocation}>Allow location</PrimaryBtn>
+            <GhostBtn onPress={next} color={colors.textSub}>I'll review later</GhostBtn>
           </>
         )}
-        {step === 2 && <PrimaryAction label={existingGuardianCount > 0 ? 'Continue' : 'Save guardian'} onPress={saveGuardian} loading={savingGuardian} />}
-        {step === 3 && <PrimaryAction label={drillDone ? 'Continue' : 'Run SOS rehearsal'} onPress={drillDone ? next : runSOSDrill} />}
-        {step === 4 && <PrimaryAction label="Enter SafeHer" onPress={finish} />}
+        {step === 2 && (
+          <PrimaryBtn onPress={saveGuardian} loading={savingGuardian}>
+            {existingGuardianCount > 0 ? 'Continue' : 'Save guardian'}
+          </PrimaryBtn>
+        )}
+        {step === 3 && (
+          <PrimaryBtn onPress={drillDone ? next : runSOSDrill}>
+            {drillDone ? 'Continue' : 'Run SOS rehearsal'}
+          </PrimaryBtn>
+        )}
+        {step === 4 && <PrimaryBtn onPress={finish}>Enter SafeHer</PrimaryBtn>}
       </View>
     </KeyboardAvoidingView>
   );
@@ -263,7 +276,7 @@ function StepShell({ icon, eyebrow, title, body, children }) {
   return (
     <View>
       <View style={styles.heroIcon}>
-        <Ionicons name={icon} size={38} color={T.primary} />
+        <Ionicons name={icon} size={38} color={colors.primary} />
       </View>
       <Text style={styles.eyebrow}>{eyebrow}</Text>
       <Text style={styles.title}>{title}</Text>
@@ -277,7 +290,7 @@ function TrustRow({ icon, title, body }) {
   return (
     <View style={styles.trustRow}>
       <View style={styles.rowIcon}>
-        <Ionicons name={icon} size={17} color={T.text} />
+        <Ionicons name={icon} size={17} color={colors.text} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.rowTitle}>{title}</Text>
@@ -291,14 +304,14 @@ function PermissionBox({ status, title, body }) {
   const granted = status === 'granted';
   return (
     <View style={[styles.permissionBox, granted && styles.permissionGranted]}>
-      <View style={[styles.rowIcon, granted && { backgroundColor: `${T.success}1F` }]}>
-        <Ionicons name={granted ? 'checkmark-circle' : 'location'} size={18} color={granted ? T.success : T.text} />
+      <View style={[styles.rowIcon, granted && { backgroundColor: `${colors.success}1F` }]}>
+        <Ionicons name={granted ? 'checkmark-circle' : 'location'} size={18} color={granted ? colors.success : colors.text} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.rowTitle}>{title}</Text>
         <Text style={styles.rowBody}>{body}</Text>
       </View>
-      <Text style={[styles.permissionStatus, granted && { color: T.success }]}>
+      <Text style={[styles.permissionStatus, granted && { color: colors.success }]}>
         {granted ? 'Allowed' : 'Needed'}
       </Text>
     </View>
@@ -314,25 +327,8 @@ function ReadyItem({ label, value }) {
   );
 }
 
-function PrimaryAction({ label, onPress, loading }) {
-  return (
-    <TouchableOpacity style={styles.primaryAction} onPress={onPress} activeOpacity={0.88} disabled={loading}>
-      <Text style={styles.primaryActionText}>{loading ? 'Saving...' : label}</Text>
-      {!loading && <Ionicons name="arrow-forward" size={18} color={T.white} />}
-    </TouchableOpacity>
-  );
-}
-
-function SecondaryAction({ label, onPress }) {
-  return (
-    <TouchableOpacity style={styles.secondaryAction} onPress={onPress} activeOpacity={0.78}>
-      <Text style={styles.secondaryActionText}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: T.bg },
+  root: { flex: 1, backgroundColor: colors.bg },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -343,23 +339,23 @@ const styles = StyleSheet.create({
   brandMark: {
     width: 44,
     height: 44,
-    borderRadius: 14,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: T.primary,
+    backgroundColor: colors.primary,
     marginRight: 12,
   },
-  brand: { color: T.text, fontSize: 22, fontWeight: '900' },
-  progress: { color: T.textSub, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  brand: { color: colors.text, fontSize: 22, fontWeight: '700', fontFamily: 'SpaceGrotesk-Bold' },
+  progress: { color: colors.textSub, fontSize: 12, fontWeight: '700', marginTop: 2 },
   backButton: {
     width: 42,
     height: 42,
-    borderRadius: 14,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: T.surface,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: colors.border,
   },
   progressTrack: {
     height: 4,
@@ -368,98 +364,86 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     overflow: 'hidden',
   },
-  progressFill: { height: '100%', backgroundColor: T.primary, borderRadius: 999 },
+  progressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 999 },
   content: { flex: 1, paddingHorizontal: 24, justifyContent: 'center' },
   heroIcon: {
     width: 82,
     height: 82,
-    borderRadius: 24,
-    backgroundColor: T.primaryGlow,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primaryMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 22,
   },
-  eyebrow: { color: T.primary, fontSize: 12, fontWeight: '900', textTransform: 'uppercase' },
-  title: { color: T.text, fontSize: 32, lineHeight: 38, fontWeight: '900', marginTop: 10 },
-  body: { color: T.textSub, fontSize: 15, lineHeight: 23, marginTop: 14 },
+  eyebrow: { color: colors.primary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 },
+  title: { color: colors.text, fontSize: 28, lineHeight: 34, fontWeight: '700', marginTop: 10, fontFamily: 'SpaceGrotesk-Bold' },
+  body: { color: colors.textSub, fontSize: 15, lineHeight: 23, marginTop: 14 },
   stepDetails: { marginTop: 26 },
   trustRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 13,
     borderBottomWidth: 1,
-    borderBottomColor: T.border,
+    borderBottomColor: colors.borderSubtle,
   },
   rowIcon: {
     width: 38,
     height: 38,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: T.surface,
+    backgroundColor: colors.surface,
     marginRight: 12,
   },
-  rowTitle: { color: T.text, fontSize: 14, fontWeight: '900' },
-  rowBody: { color: T.textSub, fontSize: 12, lineHeight: 17, marginTop: 3 },
+  rowTitle: { color: colors.text, fontSize: 14, fontWeight: '700' },
+  rowBody: { color: colors.textSub, fontSize: 12, lineHeight: 17, marginTop: 3 },
   permissionBox: {
     minHeight: 78,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: T.border,
-    backgroundColor: T.card,
-    borderRadius: 18,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
     padding: 14,
   },
   permissionGranted: { borderColor: 'rgba(16,185,129,0.35)' },
-  permissionStatus: { color: T.warning, fontSize: 12, fontWeight: '900' },
+  permissionStatus: { color: colors.warning, fontSize: 12, fontWeight: '700' },
   form: { gap: 12 },
   input: {
     minHeight: 52,
-    borderRadius: 16,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: T.border,
-    backgroundColor: T.card,
-    color: T.text,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    color: colors.text,
     fontSize: 15,
     paddingHorizontal: 16,
   },
   drillButton: {
     height: 174,
     borderRadius: 87,
-    backgroundColor: T.danger,
+    backgroundColor: colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 4,
     borderColor: 'rgba(255,255,255,0.14)',
   },
-  drillButtonDone: { backgroundColor: T.success },
-  drillText: { color: T.white, fontSize: 21, fontWeight: '900' },
-  drillSub: { color: 'rgba(255,255,255,0.82)', fontSize: 12, fontWeight: '800', marginTop: 7 },
+  drillButtonDone: { backgroundColor: colors.success },
+  drillText: { color: colors.white, fontSize: 20, fontWeight: '700', fontFamily: 'SpaceGrotesk-Bold' },
+  drillSub: { color: 'rgba(255,255,255,0.82)', fontSize: 12, fontWeight: '600', marginTop: 7 },
   readyGrid: { flexDirection: 'row', gap: 10 },
   readyItem: {
     flex: 1,
     minHeight: 84,
-    borderRadius: 17,
-    backgroundColor: T.card,
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: colors.border,
     padding: 12,
     justifyContent: 'center',
   },
-  readyValue: { color: T.text, fontSize: 15, fontWeight: '900' },
-  readyLabel: { color: T.textSub, fontSize: 11, fontWeight: '800', marginTop: 6 },
+  readyValue: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  readyLabel: { color: colors.textSub, fontSize: 11, fontWeight: '600', marginTop: 6 },
   actions: { paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 42 : 24, gap: 10 },
-  primaryAction: {
-    minHeight: 56,
-    borderRadius: 17,
-    backgroundColor: T.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  primaryActionText: { color: T.white, fontSize: 16, fontWeight: '900' },
-  secondaryAction: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
-  secondaryActionText: { color: T.textSub, fontSize: 14, fontWeight: '800' },
 });

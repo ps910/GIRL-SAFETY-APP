@@ -9,6 +9,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LocationsDB, OfflineQueueDB, NearbyUsersDB, AlertsDB, SharedEvidenceDB, UserDB } from './Database';
 import CloudSyncService from './CloudSyncService';
 import { Platform } from 'react-native';
+import NetworkMonitor from './NetworkMonitor';
+import SecurityService from './SecurityService';
 
 import type { EmergencyContact, LocationData } from '../types';
 import Logger from '../utils/logger';
@@ -40,18 +42,7 @@ const NEARBY_BROADCAST_KEY = '@safeher_nearby_broadcast';
 
 // ─── Safe connectivity checker (no native dependency) ────────────
 const checkConnectivity = async (): Promise<boolean> => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch('https://clients3.google.com/generate_204', {
-      method: 'HEAD',
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response.status >= 200 && response.status < 400;
-  } catch {
-    return false;
-  }
+  return NetworkMonitor.isOnline();
 };
 
 class OfflineLocationServiceClass {
@@ -191,11 +182,19 @@ class OfflineLocationServiceClass {
   ): Promise<SOSShareResult> {
     await LocationsDB.add(location, 'sos');
 
+    const encryptedData = SecurityService.encryptLocation({
+      latitude: location?.coords?.latitude,
+      longitude: location?.coords?.longitude,
+      accuracy: location?.coords?.accuracy || undefined,
+      timestamp: new Date().toISOString(),
+    });
+
     const alert = await AlertsDB.add({
       type: 'SOS_DANGER',
       severity: 'critical',
       latitude: location?.coords?.latitude,
       longitude: location?.coords?.longitude,
+      encryptedPayload: encryptedData,
       accuracy: (location?.coords?.accuracy ?? null) as number | undefined,
       speed: (location?.coords?.speed ?? null) as number | undefined,
       heading: (location?.coords?.heading ?? null) as number | undefined,
@@ -221,6 +220,7 @@ class OfflineLocationServiceClass {
         data: {
           latitude: location?.coords?.latitude,
           longitude: location?.coords?.longitude,
+          encryptedPayload: encryptedData,
           contacts: contacts?.map(c => ({ name: c.name, phone: c.phone })),
           message,
           timestamp: Date.now(),

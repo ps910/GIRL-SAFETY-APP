@@ -8,6 +8,8 @@
 import { useColorScheme } from 'react-native';
 import { useMemo } from 'react';
 
+
+
 // ── Types ────────────────────────────────────────────────────────
 interface ColorPalette {
   primary: string;

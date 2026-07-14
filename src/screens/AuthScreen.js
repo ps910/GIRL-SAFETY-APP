@@ -61,18 +61,18 @@ import { useAuth } from '../context/AuthContext';
 WebBrowser.maybeCompleteAuthSession();
 
 // ────────────────────────────────────────────────────────────────
-//  DESIGN TOKENS — Dark Luxury
+//  DESIGN TOKENS — Midnight Indigo
 // ────────────────────────────────────────────────────────────────
 const C = {
-  bg:           '#07070B', // Deepest black
-  surface:      'rgba(255,255,255,0.03)', // Glass surface
-  card:         'rgba(30,30,42,0.6)', // Glass card
-  border:       'rgba(255,255,255,0.06)', // Subtle border
-  borderGlow:   'rgba(255,42,112,0.8)', // Primary glow border
-  primary:      '#FF2A70', // Vibrant pink
-  primaryDark:  '#D81B60', // Darker pink
-  primaryGlow:  'rgba(255,42,112,0.3)', // Glow drop shadow
-  accent:       '#FF8FAB', // Soft accent
+  bg:           '#0A0E1A', // Deep midnight base
+  surface:      'rgba(99, 102, 241, 0.06)', // Glass surface
+  card:         '#131A2E', // Glass card
+  border:       'rgba(99, 102, 241, 0.15)', // Subtle border
+  borderGlow:   'rgba(99, 102, 241, 0.5)', // Primary glow border
+  primary:      '#6366F1', // Indigo primary
+  primaryDark:  '#4F46E5', // Deep indigo
+  primaryGlow:  'rgba(99, 102, 241, 0.25)', // Glow drop shadow
+  accent:       '#8B5CF6', // Purple accent
   gold:         '#FFB300',
   white:        '#FFFFFF',
   text:         '#F0F0F8',

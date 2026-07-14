@@ -20,23 +20,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Design tokens (same as AuthScreen) ──────────────────────────
 const C = {
-  bg:          '#0D0D14',
-  surface:     '#13131F',
-  card:        '#1A1A2A',
-  border:      'rgba(255,255,255,0.08)',
-  borderGlow:  'rgba(233,30,99,0.5)',
-  primary:     '#E91E63',
-  primaryDark: '#C2185B',
-  primaryGlow: 'rgba(233,30,99,0.25)',
-  accent:      '#FF6B9D',
+  bg:          '#0A0E1A', // Deep midnight base
+  surface:     'rgba(99, 102, 241, 0.06)', // Glass surface
+  card:        '#131A2E', // Glass card
+  border:      'rgba(99, 102, 241, 0.15)', // Subtle border
+  borderGlow:  'rgba(99, 102, 241, 0.5)', // Primary glow border
+  primary:     '#6366F1', // Indigo primary
+  primaryDark: '#4F46E5', // Deep indigo
+  primaryGlow: 'rgba(99, 102, 241, 0.25)', // Glow drop shadow
+  accent:      '#8B5CF6', // Purple accent
   gold:        '#FFB300',
   white:       '#FFFFFF',
-  text:        '#F0F0F8',
-  textSub:     '#8888AA',
-  textHint:    '#555570',
-  danger:      '#FF5252',
-  success:     '#00E676',
-  purple:      '#7C4DFF',
+  text:        '#F1F5F9',
+  textSub:     '#94A3B8',
+  textHint:    '#64748B',
+  danger:      '#EF4444',
+  success:     '#10B981',
+  purple:      '#8B5CF6',
 };
 
 const { width } = Dimensions.get('window');

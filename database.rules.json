@@ -48,6 +48,30 @@
         ".write": "auth != null && (!data.exists() || data.child('ownerUid').val() === auth.uid) && (!newData.exists() || newData.child('ownerUid').val() === auth.uid)",
         ".validate": "newData.hasChildren(['ownerUid','expiresAt','isActive']) && newData.child('ownerUid').val() === auth.uid && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > now && newData.child('expiresAt').val() < now + 86400000"
       }
+    },
+
+    "police_departments": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true"
+    },
+
+    "officers": {
+      ".read": "auth != null",
+      "$officerId": {
+        ".write": "auth != null && (auth.token.admin === true || auth.uid === $officerId)"
+      }
+    },
+
+    "case_assignments": {
+      ".read": "auth != null && (auth.token.admin === true || auth.token.police === true)",
+      ".write": "auth != null && auth.token.admin === true"
+    },
+
+    "case_responses": {
+      ".read": "auth != null && (auth.token.admin === true || auth.token.police === true || data.child('userId').val() === auth.uid)",
+      "$caseId": {
+        ".write": "auth != null && (auth.token.police === true || auth.token.admin === true)"
+      }
     }
   }
 }

@@ -37,6 +37,15 @@ jobs:
       - name: Check package versions
         run: npx expo install --check
 
+      - name: Run Jest Tests
+        run: npm run test --if-present
+
+      - name: Install Web Dashboard deps & Compile
+        run: |
+          cd apps/dashboard
+          npm ci
+          npm run build
+
   # ─── Build Android APK (Preview) ───────────────────────────────
   build-android:
     name: Build Android APK

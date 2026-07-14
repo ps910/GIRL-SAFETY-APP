@@ -341,9 +341,184 @@ export const cleanupOldAlerts = functions.pubsub
 export const onNewDevice = functions.database
   .ref("/admin/devices/{uid}")
   .onWrite(async (change: any) => {
-    if (!change.before.exists() && change.after.exists()) {
-      await db.ref("admin/statistics/total_devices")
-        .transaction((current: number | null) => (current || 0) + 1);
-    }
     return null;
   });
+
+// ═══════════════════════════════════════════════════════════════════
+// 6. ON CASE ASSIGNED — notify assigned officer
+// ═══════════════════════════════════════════════════════════════════
+export const onCaseAssigned = functions.database
+  .ref("/case_assignments/{caseId}")
+  .onCreate(async (snapshot: any, context: any) => {
+    const data = snapshot.val();
+    const { caseId } = context.params;
+    if (!data || !data.officerId) return null;
+
+    // Fetch officer's push token
+    const officerSnap = await db.ref(`officers/${data.officerId}`).once("value");
+    if (!officerSnap.exists()) return null;
+
+    const officer = officerSnap.val();
+    if (!officer.pushToken) return null;
+
+    // Send push notification to officer
+    await admin.messaging().send({
+      token: officer.pushToken,
+      notification: {
+        title: "🚨 Emergency Case Assigned",
+        body: `You have been assigned to Case ${caseId}. Respond immediately.`,
+      },
+      data: { type: "CASE_ASSIGNED", caseId, sosEventId: data.sosEventId },
+      android: {
+        priority: "high",
+        notification: { channelId: "sos_channel", priority: "max", sound: "default" },
+      },
+    }).catch((e: unknown) => functions.logger.error("Officer push failed", e));
+
+    return null;
+  });
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. ON CASE RESPONSE UPDATE — notify user & sync status
+// ═══════════════════════════════════════════════════════════════════
+export const onCaseResponseUpdate = functions.database
+  .ref("/case_responses/{caseId}")
+  .onWrite(async (change: any, context: any) => {
+    const { caseId } = context.params;
+    if (!change.after.exists()) return null;
+
+    const data = change.after.val();
+    const status = data.status; // EN_ROUTE, ON_SCENE, RESOLVED, etc.
+
+    // Get case assignment details
+    const assignSnap = await db.ref(`case_assignments/${caseId}`).once("value");
+    if (!assignSnap.exists()) return null;
+
+    const assignment = assignSnap.val();
+    const sosEventId = assignment.sosEventId;
+
+    // Find victim's UID by searching active_sos
+    const sosSnap = await db.ref(`admin/active_sos/${sosEventId}`).once("value");
+    if (!sosSnap.exists()) return null;
+
+    const sosEvent = sosSnap.val();
+    const uid = sosEvent._uid;
+
+    const promises: Promise<unknown>[] = [
+      // Sync status to active_sos
+      db.ref(`admin/active_sos/${sosEventId}/status`).set(status),
+      // Sync status to user's local events list
+      db.ref(`users/${uid}/sos_events/${sosEventId}/status`).set(status),
+    ];
+
+    if (status === "RESOLVED") {
+      promises.push(
+        db.ref(`admin/active_sos/${sosEventId}/resolvedAt`).set(new Date().toISOString()),
+        db.ref(`admin/active_sos/${sosEventId}/status`).set("RESOLVED"),
+        db.ref(`users/${uid}/sos_events/${sosEventId}/status`).set("RESOLVED")
+      );
+    }
+
+    await Promise.allSettled(promises);
+    return null;
+  });
+
+// ═══════════════════════════════════════════════════════════════════
+// 8. GENERATE ANALYTICS — hourly scheduled stats
+// ═══════════════════════════════════════════════════════════════════
+export const generateAnalytics = functions.pubsub
+  .schedule("every 1 hours")
+  .onRun(async () => {
+    const [usersSnap, casesSnap, journeysSnap, officersSnap] = await Promise.all([
+      db.ref("users").once("value"),
+      db.ref("admin/sos_log").once("value"),
+      db.ref("admin/active_journeys").once("value"),
+      db.ref("officers").once("value"),
+    ]);
+
+    const totalUsers = usersSnap.numChildren();
+    const totalSOS = casesSnap.numChildren();
+    const activeJourneys = journeysSnap.numChildren();
+    const totalOfficers = officersSnap.numChildren();
+
+    // Update admin analytics statistics node
+    await db.ref("admin/statistics").update({
+      totalUsers,
+      totalSOSEvents: totalSOS,
+      activeJourneys,
+      totalOfficers,
+      lastGeneratedAt: admin.database.ServerValue.TIMESTAMP,
+    });
+
+    return null;
+  });
+
+// ═══════════════════════════════════════════════════════════════════
+// 9. ASSIGN CASE TO NEAREST OFFICER — callable dispatch tool
+// ═══════════════════════════════════════════════════════════════════
+export const assignCaseToNearestOfficer = functions.https.onCall(async (data: any, context: any) => {
+  if (!context.auth || !context.auth.token.admin) {
+    throw new functions.https.HttpsError("permission-denied", "Admin auth required.");
+  }
+
+  const { sosEventId } = data as { sosEventId: string };
+  if (!sosEventId) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing sosEventId.");
+  }
+
+  // Fetch SOS location
+  const sosSnap = await db.ref(`admin/active_sos/${sosEventId}`).once("value");
+  if (!sosSnap.exists()) {
+    throw new functions.https.HttpsError("not-found", "Case not found.");
+  }
+  const sos = sosSnap.val();
+  if (sos.latitude === undefined || sos.longitude === undefined) {
+    throw new functions.https.HttpsError("failed-precondition", "Case missing location coordinates.");
+  }
+
+  // Fetch available officers
+  const officersSnap = await db.ref("officers").once("value");
+  if (!officersSnap.exists()) {
+    throw new functions.https.HttpsError("not-found", "No officers registered.");
+  }
+
+  let nearestOfficerId: string | null = null;
+  let minDistance = Infinity;
+
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dist = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  officersSnap.forEach((child: any) => {
+    const o = child.val();
+    if (o.status === "available" && o.location) {
+      const d = dist(sos.latitude, sos.longitude, o.location.latitude, o.location.longitude);
+      if (d < minDistance) {
+        minDistance = d;
+        nearestOfficerId = child.key;
+      }
+    }
+    return false;
+  });
+
+  if (!nearestOfficerId) {
+    throw new functions.https.HttpsError("unavailable", "No available officers nearby.");
+  }
+
+  const caseId = `case_${Date.now()}`;
+  await db.ref(`case_assignments/${caseId}`).set({
+    sosEventId,
+    officerId: nearestOfficerId,
+    status: "assigned",
+    assignedAt: new Date().toISOString(),
+    assignedBy: context.auth.uid,
+  });
+
+  return { success: true, caseId, officerId: nearestOfficerId, distanceKm: minDistance };
+});
+

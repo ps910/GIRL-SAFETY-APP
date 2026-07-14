@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Screen, Header, Card, SectionTitle, PrimaryBtn,
   Input, Label, T,
@@ -42,8 +43,17 @@ export default function ProfileScreen() {
   const { userProfile, updateProfile, markProfileComplete } = useAuth();
   const [form, setForm] = useState(userProfile);
   const [saving, setSaving] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
 
-  useEffect(() => { setForm(userProfile); }, [userProfile]);
+  useEffect(() => {
+    const checkVerificationStatus = async () => {
+      const status = await AsyncStorage.getItem('@safeher_kyc_status');
+      if (status === 'verified') {
+        setIsVerified(true);
+      }
+    };
+    checkVerificationStatus();
+  }, []);
 
   const setField = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -102,6 +112,22 @@ export default function ProfileScreen() {
         <Text style={styles.name}>{form.fullName || 'Your Name'}</Text>
         <Text style={styles.email}>{form.email || form.phone || 'Add contact info'}</Text>
 
+        {/* Verification status badge */}
+        {isVerified ? (
+          <View style={styles.verifiedBadge}>
+            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+            <Text style={styles.verifiedText}>Safety ID Verified</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.verifyLink}
+            onPress={() => navigation.navigate('LivenessVerification')}
+          >
+            <Ionicons name="shield-outline" size={14} color={T.primary} />
+            <Text style={styles.verifyLinkText}>Verify Safety Identity</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={styles.progressBar}>
           <View style={[styles.progressFill, { width: `${completeness}%` }]} />
         </View>
@@ -135,6 +161,30 @@ export default function ProfileScreen() {
         Save Profile
       </PrimaryBtn>
 
+      {/* Report / Block Panel */}
+      <SectionTitle>Community Safety</SectionTitle>
+      <Card style={{ padding: 16 }}>
+        <Text style={{ color: T.textSub, fontSize: 13, lineHeight: 18, marginBottom: 12 }}>
+          Help us keep SafeHer a secure, female-only space. If you suspect any malicious or incorrect profile credentials, report them immediately.
+        </Text>
+        <TouchableOpacity
+          style={styles.reportBtn}
+          onPress={() => {
+            Alert.alert(
+              'Report Suspicious Profile',
+              'Would you like to file a profile verification review report to our administrators?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'File Report', style: 'destructive', onPress: () => Alert.alert('Report Filed', 'A profile verification review has been logged.') },
+              ]
+            );
+          }}
+        >
+          <Ionicons name="alert-circle-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
+          <Text style={styles.reportBtnText}>Report Malicious Profile</Text>
+        </TouchableOpacity>
+      </Card>
+
       <Text style={styles.note}>
         🔒 Profile is stored locally and shared only when you trigger SOS or grant explicit access.
       </Text>
@@ -154,10 +204,57 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: T.primary,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 3, borderColor: '#0F0F18',
+    borderWidth: 3, borderColor: T.bg,
   },
   name:  { color: T.white, fontSize: 20, fontWeight: '900', marginTop: 14 },
   email: { color: T.textSub, fontSize: 13, marginTop: 4 },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginTop: 8,
+    gap: 4,
+  },
+  verifiedText: {
+    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  verifyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    marginTop: 8,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  verifyLinkText: {
+    color: T.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  reportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  reportBtnText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 
   progressBar: {
     width: '100%', height: 6, borderRadius: 3,

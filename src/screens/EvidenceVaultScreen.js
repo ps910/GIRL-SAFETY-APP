@@ -24,9 +24,9 @@ import {
 } from '../components/ui';
 
 const TYPE_META = {
-  audio: { icon: 'mic',          color: '#FF6B6B', label: 'Audio' },
-  photo: { icon: 'camera',       color: '#4ECDC4', label: 'Photo' },
-  note:  { icon: 'document-text', color: '#FFB84D', label: 'Note'  },
+  audio: { icon: 'mic',          color: T.danger,  label: 'Audio' },
+  photo: { icon: 'camera',       color: T.teal,    label: 'Photo' },
+  note:  { icon: 'document-text', color: T.warning, label: 'Note'  },
   sos:   { icon: 'warning',      color: T.danger,  label: 'SOS'   },
 };
 
@@ -215,9 +215,9 @@ export default function EvidenceVaultScreen() {
             <Header title="Evidence Vault" subtitle={`${evidence.length} item${evidence.length !== 1 ? 's' : ''} • SHA-256 verified`} onBack={() => navigation.goBack()} />
 
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 18 }}>
-              <Stat icon="mic"            label="Audio" value={counts.audio} color="#FF6B6B" />
-              <Stat icon="camera"         label="Photo" value={counts.photo} color="#4ECDC4" />
-              <Stat icon="document-text"  label="Notes" value={counts.note}  color="#FFB84D" />
+              <Stat icon="mic"            label="Audio" value={counts.audio} color={T.danger} />
+              <Stat icon="camera"         label="Photo" value={counts.photo} color={T.teal} />
+              <Stat icon="document-text"  label="Notes" value={counts.note}  color={T.warning} />
             </View>
 
             {recording && (
@@ -282,9 +282,9 @@ export default function EvidenceVaultScreen() {
           <View style={styles.captureMenu}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>Capture Evidence</Text>
-            <CaptureBtn icon="camera" color="#4ECDC4" label="Take Photo" onPress={capturePhoto} />
-            <CaptureBtn icon="mic"    color="#FF6B6B" label="Record Audio" onPress={startAudioRecording} />
-            <CaptureBtn icon="document-text" color="#FFB84D" label="Write Note" onPress={() => { setCaptureMenuOpen(false); setNoteModal(true); }} />
+            <CaptureBtn icon="camera" color={T.teal} label="Take Photo" onPress={capturePhoto} />
+            <CaptureBtn icon="mic"    color={T.danger} label="Record Audio" onPress={startAudioRecording} />
+            <CaptureBtn icon="document-text" color={T.warning} label="Write Note" onPress={() => { setCaptureMenuOpen(false); setNoteModal(true); }} />
           </View>
         </TouchableOpacity>
       </Modal>
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   captureMenu: {
-    backgroundColor: '#0F0F18',
+    backgroundColor: T.bgElevated,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 22, paddingBottom: 40,
     borderTopWidth: 1, borderTopColor: T.border,

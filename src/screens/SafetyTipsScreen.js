@@ -9,12 +9,12 @@ import { Screen, Header, Card, SectionTitle, T } from '../components/ui';
 
 const CATEGORIES = [
   { id: 'all',       label: 'All',        icon: 'sparkles',  color: T.primary },
-  { id: 'physical',  label: 'Physical',   icon: 'walk',      color: '#42A5F5' },
-  { id: 'digital',   label: 'Digital',    icon: 'phone-portrait', color: '#CE93D8' },
+  { id: 'physical',  label: 'Physical',   icon: 'walk',      color: T.info },
+  { id: 'digital',   label: 'Digital',    icon: 'phone-portrait', color: T.accent },
   { id: 'travel',    label: 'Travel',     icon: 'car-sport', color: T.warning },
   { id: 'home',      label: 'Home',       icon: 'home',      color: T.info },
   { id: 'workplace', label: 'Work',       icon: 'business',  color: T.teal },
-  { id: 'dating',    label: 'Dating',     icon: 'heart',     color: '#EF5350' },
+  { id: 'dating',    label: 'Dating',     icon: 'heart',     color: T.danger },
   { id: 'emergency', label: 'Emergency',  icon: 'medical',   color: T.danger },
 ];
 

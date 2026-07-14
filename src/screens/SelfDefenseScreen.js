@@ -105,7 +105,7 @@ const TECHNIQUES = [
     difficulty: 'Beginner',
     target: 'Improvised',
     icon: 'create',
-    color: '#FFB300',
+    color: T.warning,
     why: 'You probably carry one daily. Held correctly, it strikes harder than a fist and is legal everywhere.',
     steps: [
       'Hold pen with thumb on the cap, point exposed past pinky.',

@@ -1,11 +1,11 @@
 /**
- * SafeHer Navigator
+ * SafeHer Navigator — Midnight Indigo Edition
  *
  * Goal-based primary navigation:
- * Home -> immediate protection
- * Journey -> planned travel
- * Guardians -> trusted people
- * Profile -> safety identity and account
+ * Home -> immediate protection & SOS
+ * Journey -> planned travel & history
+ * Guardians -> trusted people network
+ * Profile -> safety identity, privacy & account
  *
  * Secondary tools remain in the stack so the first screen never feels like
  * a toolbox during an emergency.
@@ -16,7 +16,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, View, StyleSheet } from 'react-native';
 import { useEmergency } from '../context/EmergencyContext';
-import { T } from '../components/ui';
+import { colors, radius, spacing } from '@safeher/shared';
 
 import type { RootStackParamList, TabParamList } from '../types';
 
@@ -32,6 +32,7 @@ import GuardianModeScreen from '../screens/GuardianModeScreen';
 import JourneyTrackerScreen from '../screens/JourneyTrackerScreen';
 import IncidentReportScreen from '../screens/IncidentReportScreen';
 import HiddenCameraScreen from '../screens/HiddenCameraScreen';
+import LivenessVerificationScreen from '../screens/LivenessVerificationScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -71,12 +72,12 @@ function TabNavigator(): React.JSX.Element {
         tabBarIcon: ({ focused, color }) => (
           <CustomTabIcon name={route.name as keyof TabParamList} focused={focused} color={color} />
         ),
-        tabBarActiveTintColor: isSOSActive ? T.danger : T.primary,
-        tabBarInactiveTintColor: T.textHint,
+        tabBarActiveTintColor: isSOSActive ? colors.danger : colors.primary,
+        tabBarInactiveTintColor: colors.textHint,
         tabBarStyle: {
-          backgroundColor: T.bgElevated,
+          backgroundColor: colors.bgElevated,
           borderTopWidth: 1,
-          borderTopColor: T.border,
+          borderTopColor: colors.border,
           height: Platform.OS === 'ios' ? 88 : 70,
           paddingBottom: Platform.OS === 'ios' ? 24 : 10,
           paddingTop: 8,
@@ -86,7 +87,12 @@ function TabNavigator(): React.JSX.Element {
           shadowOpacity: 0.36,
           shadowRadius: 14,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '800', marginTop: 2 },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginTop: 2,
+          letterSpacing: 0.2,
+        },
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: homeLabel }} />
@@ -103,7 +109,7 @@ export default function AppNavigator(): React.JSX.Element {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        contentStyle: { backgroundColor: T.bg },
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen name="MainTabs" component={TabNavigator} />
@@ -117,6 +123,7 @@ export default function AppNavigator(): React.JSX.Element {
       <Stack.Screen name="JourneyTracker" component={JourneyTrackerScreen} />
       <Stack.Screen name="IncidentReport" component={IncidentReportScreen} />
       <Stack.Screen name="HiddenCamera" component={HiddenCameraScreen} />
+      <Stack.Screen name="LivenessVerification" component={LivenessVerificationScreen} />
     </Stack.Navigator>
   );
 }
@@ -125,11 +132,11 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 38,
     height: 38,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconWrapActive: {
-    backgroundColor: 'rgba(225,29,72,0.14)',
+    backgroundColor: colors.primaryMuted,
   },
 });

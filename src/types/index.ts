@@ -18,6 +18,7 @@ export type RootStackParamList = {
   JourneyTracker: undefined;
   IncidentReport: undefined;
   HiddenCamera: undefined;
+  LivenessVerification: undefined;
 };
 
 export type TabParamList = {
@@ -67,6 +68,9 @@ export interface EmergencyContact {
   isEmergency?: boolean;
   isPrimary?: boolean;
   pushToken?: string | null;
+  tier?: number;
+  status?: string;
+  createdAt?: string;
 }
 
 // ── SOS / Alert Types ──────────────────────────────────────────
