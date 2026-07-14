@@ -20,6 +20,8 @@ interface TableConfig {
   SESSIONS: string;
   EVIDENCE_FILES: string;
   SHARED_EVIDENCE: string;
+  ALERT_EVENTS: string;
+  BLOCKED_USERS: string;
 }
 
 interface RetentionConfig {
@@ -76,6 +78,25 @@ interface AlertRecord extends DBRecord {
   heading?: number | null;
   locationUpdateCount?: number;
   response?: string;
+  status?: 'pending' | 'delivered' | 'acknowledged' | 'resolved' | 'failed';
+  deliveryAttempts?: number;
+  lastError?: string;
+  resolverId?: string;
+  shareToken?: string;
+  expiresAt?: string;
+}
+
+interface AlertEventRecord extends DBRecord {
+  alertId: string;
+  event: 'created' | 'retry' | 'contact_notified' | 'responder_ack' | 'resolved' | 'failed';
+  timestamp: string;
+  details?: string;
+}
+
+interface BlockedUserRecord extends DBRecord {
+  blockedUserId: string;
+  blockedAt: string;
+  reason?: string;
 }
 
 interface LocationHistoryEntry {
@@ -135,6 +156,13 @@ interface UserRecord {
   deviceId?: string;
   createdAt?: string;
   updatedAt?: string;
+  trustLevel?: 'unverified' | 'student' | 'verified_female';
+  genderDeclared?: 'female' | 'other';
+  idDocumentUrl?: string;
+  selfieUrl?: string;
+  collegeEmail?: string;
+  verificationStatus?: 'none' | 'pending' | 'approved' | 'rejected';
+  verificationNotes?: string;
   [key: string]: any;
 }
 
@@ -191,6 +219,8 @@ const TABLES: TableConfig = {
   SESSIONS: `${DB_PREFIX}sessions`,
   EVIDENCE_FILES: `${DB_PREFIX}evidence_files`,
   SHARED_EVIDENCE: `${DB_PREFIX}shared_evidence`,
+  ALERT_EVENTS: `${DB_PREFIX}alert_events`,
+  BLOCKED_USERS: `${DB_PREFIX}blocked_users`,
 };
 
 const RETENTION: RetentionConfig = {
@@ -615,11 +645,12 @@ export const AlertsDB = {
         locationUpdateCount: (a.locationUpdateCount || 0) + 1,
       };
     });
+    const match = updated.find(a => a.id === id);
     cacheSet(TABLES.ALERTS, updated);
     await forceFlush(TABLES.ALERTS);
     CloudSyncService.syncSOSLocation(id, {
       coords: { latitude, longitude, accuracy: extras.accuracy, speed: extras.speed, heading: extras.heading },
-    }).catch(() => {});
+    }, match?.shareToken).catch(() => {});
   },
 
   async getActiveSOSAlerts(): Promise<AlertRecord[]> {
@@ -888,6 +919,58 @@ export const SharedEvidenceDB = {
   async getPending(): Promise<SharedEvidenceRecord[]> {
     const shared = await this.getAll();
     return shared.filter(s => !s.uploadedByNearby);
+  },
+};
+
+// ── ALERT EVENTS ──────────────────────────────────────────────────
+export const AlertEventsDB = {
+  async getAll(): Promise<AlertEventRecord[]> {
+    return await cacheGet<AlertEventRecord>(TABLES.ALERT_EVENTS, true);
+  },
+
+  async getForAlert(alertId: string): Promise<AlertEventRecord[]> {
+    const events = await this.getAll();
+    return events.filter(e => e.alertId === alertId);
+  },
+
+  async add(event: Omit<AlertEventRecord, 'id' | 'createdAt'>): Promise<AlertEventRecord> {
+    const events = await this.getAll();
+    const entry = {
+      id: generateId(),
+      ...event,
+      createdAt: new Date().toISOString(),
+    } as AlertEventRecord;
+    cacheSet(TABLES.ALERT_EVENTS, [...events, entry]);
+    await forceFlush(TABLES.ALERT_EVENTS);
+    CloudSyncService.syncRecord('alert_events', entry.id, entry).catch(() => {});
+    return entry;
+  },
+};
+
+// ── BLOCKED USERS ────────────────────────────────────────────────
+export const BlockedUsersDB = {
+  async getAll(): Promise<BlockedUserRecord[]> {
+    return await cacheGet<BlockedUserRecord>(TABLES.BLOCKED_USERS, true);
+  },
+
+  async isBlocked(userId: string): Promise<boolean> {
+    const blocked = await this.getAll();
+    return blocked.some(b => b.blockedUserId === userId);
+  },
+
+  async block(blockedUserId: string, reason?: string): Promise<BlockedUserRecord> {
+    const blocked = await this.getAll();
+    const entry = {
+      id: generateId(),
+      blockedUserId,
+      blockedAt: new Date().toISOString(),
+      reason,
+      createdAt: new Date().toISOString(),
+    } as BlockedUserRecord;
+    cacheSet(TABLES.BLOCKED_USERS, [...blocked, entry]);
+    await forceFlush(TABLES.BLOCKED_USERS);
+    CloudSyncService.syncRecord('blocked_users', entry.id, entry).catch(() => {});
+    return entry;
   },
 };
 

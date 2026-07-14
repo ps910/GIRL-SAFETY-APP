@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
-import { Alert } from 'react-native';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { Alert, Share } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import BackgroundLocationService from '../../services/BackgroundLocationService';
 import LiveLocationSharingService from '../../services/LiveLocationSharingService';
 import NotificationService from '../../services/NotificationService';
@@ -8,6 +9,7 @@ import OfflineLocationService from '../../services/OfflineLocationService';
 import SafetyAIService from '../../services/SafetyAIService';
 import Logger from '../../utils/logger';
 import NetworkMonitor from '../../services/NetworkMonitor';
+import { AlertsDB, AlertEventsDB } from '../../services/Database';
 import {
   startLiveLocationTracking,
   stopLiveLocationTracking,
@@ -90,10 +92,59 @@ export function useEmergencyStore() {
     }
 
     setIsSOSActive(true);
+
+    // Fetch high-accuracy location with timeout fallback
+    let finalLocation = currentLocation;
+    try {
+      const freshLocation = await Promise.race([
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High
+        }),
+        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Location timeout')), 4500))
+      ]) as any;
+      if (freshLocation?.coords) {
+        finalLocation = {
+          coords: {
+            latitude: freshLocation.coords.latitude,
+            longitude: freshLocation.coords.longitude,
+            altitude: freshLocation.coords.altitude,
+            accuracy: freshLocation.coords.accuracy,
+            altitudeAccuracy: freshLocation.coords.altitudeAccuracy,
+            heading: freshLocation.coords.heading,
+            speed: freshLocation.coords.speed,
+          },
+          timestamp: freshLocation.timestamp,
+        };
+        setCurrentLocation(finalLocation);
+      }
+    } catch (e) {
+      Logger.log('[EmergencyStore] Position grab timeout/error — fallback to last known');
+      if (!finalLocation) {
+        const lastKnown = await OfflineLocationService.getLastKnown();
+        if (lastKnown) {
+          finalLocation = {
+            coords: {
+              latitude: lastKnown.latitude,
+              longitude: lastKnown.longitude,
+              accuracy: lastKnown.accuracy,
+              altitude: null,
+              heading: null,
+              speed: null,
+            },
+            timestamp: lastKnown.timestamp || Date.now(),
+          };
+        }
+      }
+    }
+
+    const alertId = Date.now().toString();
+    const shareToken = 'token_' + Math.random().toString(36).substr(2, 9);
+    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
     const entry: SOSHistoryEntry = {
-      id: Date.now().toString(),
+      id: alertId,
       timestamp: new Date().toISOString(),
-      location: currentLocation,
+      location: finalLocation,
       type: 'SOS',
     };
     setSOSHistory((prev) => {
@@ -107,6 +158,31 @@ export function useEmergencyStore() {
       Logger.log('[EmergencyStore] Background location SOS mode activated');
     } catch (e) {
       Logger.error('[EmergencyStore] Background location SOS mode error:', e);
+    }
+
+    // Write alert event and record locally
+    try {
+      await AlertsDB.add({
+        id: alertId,
+        status: 'pending',
+        deliveryAttempts: 1,
+        shareToken,
+        expiresAt,
+        acknowledged: false,
+        respondedTo: false,
+        latitude: finalLocation?.coords?.latitude,
+        longitude: finalLocation?.coords?.longitude,
+        accuracy: finalLocation?.coords?.accuracy,
+      } as any);
+
+      await AlertEventsDB.add({
+        alertId,
+        event: 'created',
+        timestamp: new Date().toISOString(),
+        details: 'SOS alert initiated via trigger',
+      });
+    } catch (e) {
+      Logger.error('[EmergencyStore] Local DB insert failed:', e);
     }
 
     const isOnline = NetworkMonitor.isOnline();
@@ -132,9 +208,10 @@ export function useEmergencyStore() {
       }
     }
 
+    const trackingUrl = `https://safeher-dashboard.vercel.app/alert/${shareToken}`;
     const alertMessage = liveShareUrl
       ? `${sosMessage}\n\nLive tracking link: ${liveShareUrl}`
-      : sosMessage;
+      : `${sosMessage}\n\nLive tracking link: ${trackingUrl}`;
 
     setSosDeliveryStatus({
       state: 'sending',
@@ -143,10 +220,34 @@ export function useEmergencyStore() {
       updatedAt: new Date().toISOString(),
     });
 
-    const deliveryLocation = currentLocation || undefined;
+    // Step 6: Native Share sheet pre-fill
+    try {
+      await Share.share({
+        message: alertMessage,
+        url: liveShareUrl || trackingUrl,
+        title: 'SafeHer SOS Alert',
+      });
+    } catch (e) {
+      Logger.error('[EmergencyStore] Native share sheet launch error:', e);
+    }
+
+    const deliveryLocation = finalLocation || undefined;
 
     if (!isOnline) {
       try {
+        // Optimistic Outbox queueing for background retry
+        const outboxData = await AsyncStorage.getItem('@safeher_sos_outbox');
+        const outboxList = outboxData ? JSON.parse(outboxData) : [];
+        outboxList.push({
+          id: alertId,
+          location: finalLocation,
+          message: sosMessage,
+          contacts: emergencyContacts,
+          attempts: 1,
+          status: 'pending',
+        });
+        await AsyncStorage.setItem('@safeher_sos_outbox', JSON.stringify(outboxList));
+
         await sendSOSToContacts(emergencyContacts, alertMessage, deliveryLocation);
         setSosDeliveryStatus({
           state: 'sent',
@@ -154,6 +255,13 @@ export function useEmergencyStore() {
           contactCount: emergencyContacts.length,
           method: 'sms_fallback',
           updatedAt: new Date().toISOString(),
+        });
+
+        await AlertEventsDB.add({
+          alertId,
+          event: 'contact_notified',
+          timestamp: new Date().toISOString(),
+          details: 'SOS fallback SMS launched',
         });
       } catch (e) {
         Logger.error('[EmergencyStore] Offline SMS trigger error:', e);
@@ -207,6 +315,22 @@ export function useEmergencyStore() {
               };
 
         setSosDeliveryStatus(nextDeliveryStatus);
+
+        // Update DB alert status
+        await AlertsDB.add({
+          id: alertId,
+          status: nextDeliveryStatus.state === 'failed' ? 'failed' : 'delivered',
+          acknowledged: false,
+          respondedTo: false,
+        } as any);
+
+        await AlertEventsDB.add({
+          alertId,
+          event: nextDeliveryStatus.state === 'failed' ? 'failed' : 'contact_notified',
+          timestamp: new Date().toISOString(),
+          details: `SOS alert delivered status: ${nextDeliveryStatus.message}`,
+        });
+
         if (nextDeliveryStatus.state === 'failed') {
           Alert.alert(
             'SOS Alerts Not Confirmed',
@@ -285,6 +409,61 @@ export function useEmergencyStore() {
 
     lastSOSTriggerRef.current = Date.now();
   }, [isSOSActive, sosHistory]);
+
+  const processSosOutbox = useCallback(async () => {
+    if (!NetworkMonitor.isOnline()) return;
+    try {
+      const outboxData = await AsyncStorage.getItem('@safeher_sos_outbox');
+      if (!outboxData) return;
+      const outboxList = JSON.parse(outboxData);
+      if (outboxList.length === 0) return;
+
+      const remainingItems: any[] = [];
+      for (const item of outboxList) {
+        try {
+          const trackingUrl = `https://safeher-dashboard.vercel.app/alert/${item.id}`;
+          const alertMessage = `${item.message}\n\nLive tracking link: ${trackingUrl}`;
+          await sendSOSToContacts(item.contacts, alertMessage, item.location);
+          
+          await AlertsDB.add({
+            id: item.id,
+            status: 'delivered',
+            acknowledged: false,
+            respondedTo: false,
+          } as any);
+
+          await AlertEventsDB.add({
+            alertId: item.id,
+            event: 'contact_notified',
+            timestamp: new Date().toISOString(),
+            details: 'Outbox message delivered successfully via retry',
+          });
+        } catch (e) {
+          item.attempts += 1;
+          if (item.attempts < 5) {
+            remainingItems.push(item);
+          } else {
+            await AlertEventsDB.add({
+              alertId: item.id,
+              event: 'failed',
+              timestamp: new Date().toISOString(),
+              details: `Outbox retry failed: max attempts reached: ${e}`,
+            });
+          }
+        }
+      }
+      await AsyncStorage.setItem('@safeher_sos_outbox', JSON.stringify(remainingItems));
+    } catch (e) {
+      Logger.error('[EmergencyStore] Outbox processing error:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    const outboxInterval = setInterval(() => {
+      processSosOutbox();
+    }, 30000);
+    return () => clearInterval(outboxInterval);
+  }, [processSosOutbox]);
 
   const cancelSOS = useCallback(async (
     settings: EmergencySettings,

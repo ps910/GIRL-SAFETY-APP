@@ -50,6 +50,13 @@
       }
     },
 
+    "public_alerts": {
+      "$shareToken": {
+        ".read": "data.exists() && now < data.child('expiresAt').val()",
+        ".write": false
+      }
+    },
+
     "police_departments": {
       ".read": "auth != null",
       ".write": "auth != null && auth.token.admin === true"

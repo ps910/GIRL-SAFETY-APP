@@ -2,7 +2,7 @@
  * ProfileScreen v7.0 — Digital Safety ID (Dark Luxury)
  */
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
@@ -112,16 +112,26 @@ export default function ProfileScreen() {
         <Text style={styles.name}>{form.fullName || 'Your Name'}</Text>
         <Text style={styles.email}>{form.email || form.phone || 'Add contact info'}</Text>
 
-        {/* Verification status badge */}
-        {isVerified ? (
-          <View style={styles.verifiedBadge}>
+        {/* 3-Tier Verification Badge */}
+        {form.trustLevel === 'verified_female' ? (
+          <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
             <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-            <Text style={styles.verifiedText}>Safety ID Verified</Text>
+            <Text style={[styles.verifiedText, { color: '#10B981' }]}>Verified Female</Text>
+          </View>
+        ) : form.trustLevel === 'student' ? (
+          <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
+            <Ionicons name="school" size={14} color="#F59E0B" />
+            <Text style={[styles.verifiedText, { color: '#F59E0B' }]}>Verified Student</Text>
+          </View>
+        ) : form.verificationStatus === 'pending' ? (
+          <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
+            <ActivityIndicator size="small" color={T.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.verifiedText, { color: T.primary }]}>Approval Pending</Text>
           </View>
         ) : (
           <TouchableOpacity
             style={styles.verifyLink}
-            onPress={() => navigation.navigate('LivenessVerification')}
+            onPress={() => navigation.navigate('Verification')}
           >
             <Ionicons name="shield-outline" size={14} color={T.primary} />
             <Text style={styles.verifyLinkText}>Verify Safety Identity</Text>

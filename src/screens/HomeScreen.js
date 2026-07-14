@@ -28,6 +28,8 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { useEmergency } from '../context/EmergencyContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Logger from '../utils/logger';
 import { getLocalEmergencyNumbers, makePhoneCall, vibrateEmergency } from '../utils/helpers';
 import { SOSButton, ProtectionTile, ContextCard, StatusDot, Pill, FloatingOrb, T } from '../components/ui';
 import { colors, spacing, radius } from '@safeher/shared';
@@ -89,6 +91,31 @@ export default function HomeScreen() {
         setCurrentLocation(loc);
       } catch {}
     })();
+  }, []);
+
+  useEffect(() => {
+    const checkNightAutoArm = async () => {
+      const currentHour = new Date().getHours();
+      if (currentHour >= 20 || currentHour < 6) {
+        try {
+          const settingsData = await AsyncStorage.getItem('@girl_safety_settings');
+          if (settingsData) {
+            const parsed = JSON.parse(settingsData);
+            if (!parsed.shakeToSOS) {
+              parsed.shakeToSOS = true;
+              await AsyncStorage.setItem('@girl_safety_settings', JSON.stringify(parsed));
+              Logger.log('[Auto-Arm] Night auto-arm activated shakeToSOS setting');
+            }
+          }
+        } catch (e) {
+          Logger.error('[Auto-Arm] Night auto-arm settings update error:', e);
+        }
+      }
+    };
+    checkNightAutoArm();
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };

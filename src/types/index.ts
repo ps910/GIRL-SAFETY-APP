@@ -19,6 +19,7 @@ export type RootStackParamList = {
   IncidentReport: undefined;
   HiddenCamera: undefined;
   LivenessVerification: undefined;
+  Verification: undefined;
 };
 
 export type TabParamList = {
