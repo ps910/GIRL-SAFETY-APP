@@ -522,3 +522,79 @@ export const assignCaseToNearestOfficer = functions.https.onCall(async (data: an
   return { success: true, caseId, officerId: nearestOfficerId, distanceKm: minDistance };
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// 6. SOS DELIVERY CONFIRMATION
+//    When a guardian's device ACKs the push, write confirmation back
+//    to the user's SOS event so the client-side pipeline can detect it.
+// ═══════════════════════════════════════════════════════════════════
+exports.confirmSOSDelivery = functions.https.onCall(async (data: any, context: any) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be logged in.");
+  }
+
+  const { sosId, targetUid } = data;
+  if (!sosId || typeof sosId !== "string") {
+    throw new functions.https.HttpsError("invalid-argument", "sosId is required.");
+  }
+  if (!targetUid || typeof targetUid !== "string") {
+    throw new functions.https.HttpsError("invalid-argument", "targetUid is required.");
+  }
+
+  // Validate sosId format to prevent injection
+  if (!/^sos_[a-z0-9_]+$/.test(sosId)) {
+    throw new functions.https.HttpsError("invalid-argument", "Invalid sosId format.");
+  }
+
+  // Write delivery confirmation to the target user's SOS event
+  const confirmRef = db.ref(`users/${targetUid}/sos_events/${sosId}/delivery_confirmations/${context.auth.uid}`);
+  await confirmRef.set({
+    confirmedBy: context.auth.uid,
+    confirmedAt: new Date().toISOString(),
+    method: data.method || "push",
+  });
+
+  // Also write a summary flag for easy polling
+  await db.ref(`users/${targetUid}/sos_events/${sosId}/delivery_confirmed`).set(true);
+
+  functions.logger.info(`SOS delivery confirmed: ${sosId} by ${context.auth.uid} for user ${targetUid}`);
+
+  return { success: true, sosId, confirmedAt: new Date().toISOString() };
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. EXPIRE LIVE TRACKING SESSIONS (Location Privacy)
+//    Cron: runs every minute. Hard-deletes sessions past expiresAt.
+//    Prevents indefinite location tracking even if client fails to stop.
+// ═══════════════════════════════════════════════════════════════════
+exports.expireLiveSessions = functions.pubsub.schedule("every 1 minutes").onRun(async () => {
+  const now = Date.now();
+
+  try {
+    const sessionsRef = db.ref("live_tracking");
+    const snapshot = await sessionsRef.orderByChild("expiresAt").endAt(now).once("value");
+
+    if (!snapshot.exists()) return null;
+
+    const updates: Record<string, null> = {};
+    let expiredCount = 0;
+
+    snapshot.forEach((child: any) => {
+      const session = child.val();
+      if (session.isActive && session.expiresAt <= now) {
+        updates[`live_tracking/${child.key}`] = null;
+        expiredCount++;
+      }
+      return false;
+    });
+
+    if (expiredCount > 0) {
+      await db.ref().update(updates);
+      functions.logger.info(`Expired ${expiredCount} live tracking session(s)`);
+    }
+
+    return null;
+  } catch (error) {
+    functions.logger.error("expireLiveSessions error:", error);
+    return null;
+  }
+});

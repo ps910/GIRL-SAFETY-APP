@@ -1,5 +1,10 @@
 /**
  * LiveLocationSharingService — TypeScript — Shareable web URL for real-time tracking
+ *
+ * Privacy controls (v2):
+ *  - Client-side TTL enforcement: auto-expire on every updateLocation()
+ *  - Auto-stop timer: grace period after SOS cancel
+ *  - Server-side enforcement: Cloud Function expireLiveSessions (cron)
  */
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -85,6 +90,7 @@ interface FirebaseDBHelpers {
 let _db: FirebaseDBHelpers | null = null;
 let _activeSessionId: string | null = null;
 let _isSharing = false;
+let _autoStopTimer: ReturnType<typeof setTimeout> | null = null;
 
 const SESSIONS_STORAGE_KEY = '@gs_live_sessions';
 
@@ -170,6 +176,18 @@ const LiveLocationSharingService = {
     if (!_isSharing || !_activeSessionId || !location?.coords) return;
 
     try {
+      // ── Privacy check: auto-expire if past TTL ──────────────
+      const stored = await AsyncStorage.getItem(SESSIONS_STORAGE_KEY);
+      if (stored) {
+        const sessions: SessionData[] = JSON.parse(stored);
+        const active = sessions.find(s => s.id === _activeSessionId);
+        if (active && Date.now() > active.expiresAt) {
+          Logger.log('[LiveShare] Session expired — auto-stopping');
+          await this.stopSession();
+          return;
+        }
+      }
+
       const locationUpdate: LocationUpdate = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -229,6 +247,12 @@ const LiveLocationSharingService = {
         await AsyncStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(updated));
       }
 
+      // Clear any auto-stop timer
+      if (_autoStopTimer) {
+        clearTimeout(_autoStopTimer);
+        _autoStopTimer = null;
+      }
+
       const stoppedId = _activeSessionId;
       _activeSessionId = null;
       _isSharing = false;
@@ -242,6 +266,43 @@ const LiveLocationSharingService = {
   // Alias for backward compatibility
   async endSession(): Promise<StopResult> {
     return this.stopSession();
+  },
+
+  /**
+   * Schedule auto-stop after a grace period (e.g., 5 min after SOS cancel).
+   * Prevents indefinite location sharing if the user forgets to stop.
+   */
+  scheduleAutoStop(graceMinutes: number = 5): void {
+    if (_autoStopTimer) clearTimeout(_autoStopTimer);
+    _autoStopTimer = setTimeout(async () => {
+      if (_isSharing) {
+        Logger.log(`[LiveShare] Auto-stop after ${graceMinutes}min grace period`);
+        await this.stopSession();
+      }
+    }, graceMinutes * 60 * 1000);
+    Logger.log(`[LiveShare] Auto-stop scheduled in ${graceMinutes} minutes`);
+  },
+
+  /**
+   * Check if any active session has expired and clean it up.
+   * Called on app foreground resume.
+   */
+  async checkAndExpireSession(): Promise<boolean> {
+    if (!_isSharing || !_activeSessionId) return false;
+    try {
+      const stored = await AsyncStorage.getItem(SESSIONS_STORAGE_KEY);
+      if (stored) {
+        const sessions: SessionData[] = JSON.parse(stored);
+        const active = sessions.find(s => s.id === _activeSessionId && s.isActive);
+        if (active && Date.now() > active.expiresAt) {
+          await this.stopSession();
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
   },
 
   getShareUrl(): string | null {

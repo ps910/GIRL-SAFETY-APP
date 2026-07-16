@@ -4,7 +4,6 @@ import EncryptedStorageService from '../../services/EncryptedStorageService';
 import BackgroundLocationService from '../../services/BackgroundLocationService';
 import NotificationService from '../../services/NotificationService';
 import Logger from '../../utils/logger';
-import SecurityService from '../../services/SecurityService';
 import type { EmergencySettings } from '../../types';
 
 export const STORAGE_KEYS = {
@@ -82,14 +81,9 @@ export function useSettingsStore(setIsBackgroundTracking: (v: boolean) => void) 
         if (newSettings.backgroundLocationEnabled) {
           BackgroundLocationService.startTracking({ sosMode: false }).catch(() => {});
           setIsBackgroundTracking(true);
-          SecurityService.startSessionTimer(60, () => {
-            BackgroundLocationService.stopTracking().catch(() => {});
-            setIsBackgroundTracking(false);
-          });
         } else {
           BackgroundLocationService.stopTracking().catch(() => {});
           setIsBackgroundTracking(false);
-          SecurityService.stopSessionTimer();
         }
       }
       if ('persistentSOSNotification' in newSettings) {

@@ -10,7 +10,22 @@
 
         "sos_events": {
           "$eventId": {
-            ".validate": "newData.hasChildren(['_syncedAt']) && (!newData.hasChild('latitude') || (newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90)) && (!newData.hasChild('longitude') || (newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180))"
+            ".validate": "newData.hasChildren(['_syncedAt']) && (!newData.hasChild('latitude') || (newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90)) && (!newData.hasChild('longitude') || (newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180))",
+
+            "delivery_confirmations": {
+              "$confirmerUid": {
+                ".write": "auth != null && auth.uid === $confirmerUid"
+              }
+            },
+            "delivery_confirmed": {
+              ".write": "auth != null"
+            }
+          }
+        },
+
+        "blocked": {
+          "$targetUid": {
+            ".validate": "newData.hasChildren(['uid', 'blockedAt'])"
           }
         },
 
@@ -39,6 +54,14 @@
       "statistics": {
         ".read": "auth != null && auth.token.admin === true",
         ".write": "auth != null && auth.token.admin === true"
+      },
+
+      "reports": {
+        ".read": "auth != null && auth.token.admin === true",
+        "$reportId": {
+          ".write": "auth != null && (!data.exists() || auth.token.admin === true)",
+          ".validate": "newData.hasChildren(['reporterUid', 'targetUid', 'reason', 'status', 'createdAt'])"
+        }
       }
     },
 
@@ -47,13 +70,6 @@
         ".read":  "auth != null || (data.exists() && data.child('isActive').val() === true && now < data.child('expiresAt').val())",
         ".write": "auth != null && (!data.exists() || data.child('ownerUid').val() === auth.uid) && (!newData.exists() || newData.child('ownerUid').val() === auth.uid)",
         ".validate": "newData.hasChildren(['ownerUid','expiresAt','isActive']) && newData.child('ownerUid').val() === auth.uid && newData.child('expiresAt').isNumber() && newData.child('expiresAt').val() > now && newData.child('expiresAt').val() < now + 86400000"
-      }
-    },
-
-    "public_alerts": {
-      "$shareToken": {
-        ".read": "data.exists() && now < data.child('expiresAt').val()",
-        ".write": false
       }
     },
 

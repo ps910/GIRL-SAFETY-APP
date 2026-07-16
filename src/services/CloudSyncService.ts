@@ -234,21 +234,6 @@ class CloudSyncServiceClass {
       const current = snap.exists() ? (snap.val() as number) : 0;
       await set(statsRef, current + 1);
 
-      if (sosEvent.shareToken) {
-        const publicRef = ref(this.db, `public_alerts/${sosEvent.shareToken}`);
-        const data = eventData as any;
-        await set(publicRef, {
-          alertId: sosEvent.id,
-          deviceId: this.deviceId,
-          status: data.status || 'ACTIVE',
-          latitude: data.latitude,
-          longitude: data.longitude,
-          accuracy: data.accuracy,
-          expiresAt: data.expiresAt || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-          timestamp: new Date().toISOString(),
-        });
-      }
-
       Logger.log('[CloudSync] 🚨 SOS event synced to cloud immediately');
       this._notify({ type: 'sos_synced', sosId: sosEvent.id });
       return true;
@@ -258,7 +243,7 @@ class CloudSyncServiceClass {
     }
   }
 
-  async syncSOSLocation(alertId: string, location: LocationData, shareToken?: string): Promise<boolean> {
+  async syncSOSLocation(alertId: string, location: LocationData): Promise<boolean> {
     if (!this.isInitialized || !this.db) return false;
 
     try {
@@ -283,15 +268,6 @@ class CloudSyncServiceClass {
 
       const trailRef = ref(this.db, `users/${this.deviceId}/sos_events/${alertId}/locationTrail`);
       await push(trailRef, locData);
-
-      if (shareToken) {
-        await update(ref(this.db, `public_alerts/${shareToken}`), {
-          latitude: location?.coords?.latitude,
-          longitude: location?.coords?.longitude,
-          accuracy: location?.coords?.accuracy,
-          lastLocationUpdate: new Date().toISOString(),
-        });
-      }
 
       return true;
     } catch {

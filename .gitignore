@@ -37,3 +37,15 @@ ios/GoogleService-Info.plist
 # Next.js
 .next/
 out/
+apps/dashboard/.next/
+apps/dashboard/out/
+
+# IDE/Agent Temp
+.claude/
+.gemini/
+.agents/
+.expo-shared/
+.expo/
+web-build/
+*.apk
+*.aab

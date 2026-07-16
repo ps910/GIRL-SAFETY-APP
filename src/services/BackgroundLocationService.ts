@@ -10,6 +10,7 @@ import * as TaskManager from 'expo-task-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Logger from '../utils/logger';
+import SOSPipelineService from './SOSPipelineService';
 
 const BACKGROUND_LOCATION_TASK = 'SAFEHER_BACKGROUND_LOCATION';
 const STORAGE_KEY = '@gs_background_locations';
@@ -253,6 +254,32 @@ const BackgroundLocationService = {
 
   isSOSMode(): boolean {
     return _sosActive;
+  },
+
+  /**
+   * Check for pending SOS re-notification on app restart.
+   * If the app was killed during an active SOS, this re-triggers
+   * guardian alerts via the SOSPipelineService.
+   */
+  async checkPendingRenotification(): Promise<boolean> {
+    try {
+      return await SOSPipelineService.checkPendingRenotification();
+    } catch (e) {
+      Logger.error('[BG Location] Re-notification check error:', e);
+      return false;
+    }
+  },
+
+  /**
+   * Flush any offline-queued SOS events when connectivity resumes.
+   */
+  async flushOfflineSOSQueue(): Promise<number> {
+    try {
+      return await SOSPipelineService.flushOfflineQueue();
+    } catch (e) {
+      Logger.error('[BG Location] Offline queue flush error:', e);
+      return 0;
+    }
   },
 };
 

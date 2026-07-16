@@ -2,13 +2,12 @@
  * ProfileScreen v7.0 — Digital Safety ID (Dark Luxury)
  */
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Screen, Header, Card, SectionTitle, PrimaryBtn,
   Input, Label, T,
@@ -43,17 +42,8 @@ export default function ProfileScreen() {
   const { userProfile, updateProfile, markProfileComplete } = useAuth();
   const [form, setForm] = useState(userProfile);
   const [saving, setSaving] = useState(false);
-  const [isVerified, setIsVerified] = useState(false);
 
-  useEffect(() => {
-    const checkVerificationStatus = async () => {
-      const status = await AsyncStorage.getItem('@safeher_kyc_status');
-      if (status === 'verified') {
-        setIsVerified(true);
-      }
-    };
-    checkVerificationStatus();
-  }, []);
+  useEffect(() => { setForm(userProfile); }, [userProfile]);
 
   const setField = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -112,32 +102,6 @@ export default function ProfileScreen() {
         <Text style={styles.name}>{form.fullName || 'Your Name'}</Text>
         <Text style={styles.email}>{form.email || form.phone || 'Add contact info'}</Text>
 
-        {/* 3-Tier Verification Badge */}
-        {form.trustLevel === 'verified_female' ? (
-          <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
-            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-            <Text style={[styles.verifiedText, { color: '#10B981' }]}>Verified Female</Text>
-          </View>
-        ) : form.trustLevel === 'student' ? (
-          <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
-            <Ionicons name="school" size={14} color="#F59E0B" />
-            <Text style={[styles.verifiedText, { color: '#F59E0B' }]}>Verified Student</Text>
-          </View>
-        ) : form.verificationStatus === 'pending' ? (
-          <View style={[styles.verifiedBadge, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
-            <ActivityIndicator size="small" color={T.primary} style={{ marginRight: 4 }} />
-            <Text style={[styles.verifiedText, { color: T.primary }]}>Approval Pending</Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.verifyLink}
-            onPress={() => navigation.navigate('Verification')}
-          >
-            <Ionicons name="shield-outline" size={14} color={T.primary} />
-            <Text style={styles.verifyLinkText}>Verify Safety Identity</Text>
-          </TouchableOpacity>
-        )}
-
         <View style={styles.progressBar}>
           <View style={[styles.progressFill, { width: `${completeness}%` }]} />
         </View>
@@ -171,30 +135,6 @@ export default function ProfileScreen() {
         Save Profile
       </PrimaryBtn>
 
-      {/* Report / Block Panel */}
-      <SectionTitle>Community Safety</SectionTitle>
-      <Card style={{ padding: 16 }}>
-        <Text style={{ color: T.textSub, fontSize: 13, lineHeight: 18, marginBottom: 12 }}>
-          Help us keep SafeHer a secure, female-only space. If you suspect any malicious or incorrect profile credentials, report them immediately.
-        </Text>
-        <TouchableOpacity
-          style={styles.reportBtn}
-          onPress={() => {
-            Alert.alert(
-              'Report Suspicious Profile',
-              'Would you like to file a profile verification review report to our administrators?',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'File Report', style: 'destructive', onPress: () => Alert.alert('Report Filed', 'A profile verification review has been logged.') },
-              ]
-            );
-          }}
-        >
-          <Ionicons name="alert-circle-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
-          <Text style={styles.reportBtnText}>Report Malicious Profile</Text>
-        </TouchableOpacity>
-      </Card>
-
       <Text style={styles.note}>
         🔒 Profile is stored locally and shared only when you trigger SOS or grant explicit access.
       </Text>
@@ -218,53 +158,6 @@ const styles = StyleSheet.create({
   },
   name:  { color: T.white, fontSize: 20, fontWeight: '900', marginTop: 14 },
   email: { color: T.textSub, fontSize: 13, marginTop: 4 },
-  verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    marginTop: 8,
-    gap: 4,
-  },
-  verifiedText: {
-    color: '#10B981',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  verifyLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    marginTop: 8,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
-  },
-  verifyLinkText: {
-    color: T.primary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  reportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  reportBtnText: {
-    color: '#EF4444',
-    fontSize: 13,
-    fontWeight: '700',
-  },
 
   progressBar: {
     width: '100%', height: 6, borderRadius: 3,

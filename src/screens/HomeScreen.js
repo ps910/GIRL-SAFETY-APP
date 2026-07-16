@@ -28,11 +28,10 @@ import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { useEmergency } from '../context/EmergencyContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Logger from '../utils/logger';
 import { getLocalEmergencyNumbers, makePhoneCall, vibrateEmergency } from '../utils/helpers';
 import { SOSButton, ProtectionTile, ContextCard, StatusDot, Pill, FloatingOrb, T } from '../components/ui';
 import { colors, spacing, radius } from '@safeher/shared';
+import VoiceTriggerService from '../services/VoiceTriggerService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SOS_COUNTDOWN_DEFAULT = 5;
@@ -75,12 +74,68 @@ export default function HomeScreen() {
 
   const [countdown, setCountdown] = useState(null);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [isNightMode, setIsNightMode] = useState(VoiceTriggerService.isNightTime());
   const countdownRef = useRef(null);
   const fadeIn = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 400, useNativeDriver: true, easing: Easing.out(Easing.quad) }).start();
   }, [fadeIn]);
+
+  // ── Night Safety Auto-Mode ─────────────────────────────────
+  useEffect(() => {
+    const checkNight = () => {
+      const night = VoiceTriggerService.isNightTime();
+      setIsNightMode(night);
+      return night;
+    };
+
+    // Check every 5 minutes
+    const interval = setInterval(() => {
+      const wasNight = isNightMode;
+      const isNight = checkNight();
+
+      // Auto-activate voice trigger at night (if enabled in settings)
+      if (isNight && !wasNight && settings.voiceTrigger && !isSOSActive) {
+        VoiceTriggerService.start(() => {
+          Alert.alert(
+            '🚨 Loud Sound Detected',
+            'SafeHer detected a sustained loud sound. Are you safe?',
+            [
+              { text: 'I\'m Safe', style: 'default' },
+              { text: 'Send SOS', style: 'destructive', onPress: () => executeFullSOS() },
+            ],
+            { cancelable: false },
+          );
+        }, { thresholdDB: -15 });
+      }
+
+      // Auto-deactivate when day comes
+      if (!isNight && wasNight) {
+        VoiceTriggerService.stop();
+      }
+    }, 5 * 60 * 1000);
+
+    // Initial check on mount
+    if (checkNight() && settings.voiceTrigger && !isSOSActive) {
+      VoiceTriggerService.start(() => {
+        Alert.alert(
+          '🚨 Loud Sound Detected',
+          'SafeHer detected a sustained loud sound. Are you safe?',
+          [
+            { text: 'I\'m Safe', style: 'default' },
+            { text: 'Send SOS', style: 'destructive', onPress: () => executeFullSOS() },
+          ],
+          { cancelable: false },
+        );
+      }, { thresholdDB: -15 });
+    }
+
+    return () => {
+      clearInterval(interval);
+      VoiceTriggerService.stop();
+    };
+  }, [settings.voiceTrigger, isSOSActive]);
 
   useEffect(() => {
     (async () => {
@@ -91,31 +146,6 @@ export default function HomeScreen() {
         setCurrentLocation(loc);
       } catch {}
     })();
-  }, []);
-
-  useEffect(() => {
-    const checkNightAutoArm = async () => {
-      const currentHour = new Date().getHours();
-      if (currentHour >= 20 || currentHour < 6) {
-        try {
-          const settingsData = await AsyncStorage.getItem('@girl_safety_settings');
-          if (settingsData) {
-            const parsed = JSON.parse(settingsData);
-            if (!parsed.shakeToSOS) {
-              parsed.shakeToSOS = true;
-              await AsyncStorage.setItem('@girl_safety_settings', JSON.stringify(parsed));
-              Logger.log('[Auto-Arm] Night auto-arm activated shakeToSOS setting');
-            }
-          }
-        } catch (e) {
-          Logger.error('[Auto-Arm] Night auto-arm settings update error:', e);
-        }
-      }
-    };
-    checkNightAutoArm();
-  }, []);
-
-  useEffect(() => {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };

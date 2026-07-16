@@ -33,7 +33,6 @@ import JourneyTrackerScreen from '../screens/JourneyTrackerScreen';
 import IncidentReportScreen from '../screens/IncidentReportScreen';
 import HiddenCameraScreen from '../screens/HiddenCameraScreen';
 import LivenessVerificationScreen from '../screens/LivenessVerificationScreen';
-import VerificationScreen from '../screens/VerificationScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -124,8 +123,11 @@ export default function AppNavigator(): React.JSX.Element {
       <Stack.Screen name="JourneyTracker" component={JourneyTrackerScreen} />
       <Stack.Screen name="IncidentReport" component={IncidentReportScreen} />
       <Stack.Screen name="HiddenCamera" component={HiddenCameraScreen} />
-      <Stack.Screen name="LivenessVerification" component={LivenessVerificationScreen} />
-      <Stack.Screen name="Verification" component={VerificationScreen} />
+      <Stack.Screen
+        name="LivenessVerification"
+        component={LivenessVerificationScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
     </Stack.Navigator>
   );
 }

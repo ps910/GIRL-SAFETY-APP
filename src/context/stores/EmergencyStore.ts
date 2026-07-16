@@ -1,23 +1,21 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { Alert, Share } from 'react-native';
+import { useState, useCallback, useRef } from 'react';
+import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Location from 'expo-location';
 import BackgroundLocationService from '../../services/BackgroundLocationService';
 import LiveLocationSharingService from '../../services/LiveLocationSharingService';
 import NotificationService from '../../services/NotificationService';
 import OfflineLocationService from '../../services/OfflineLocationService';
 import SafetyAIService from '../../services/SafetyAIService';
+import SOSPipelineService from '../../services/SOSPipelineService';
 import Logger from '../../utils/logger';
-import NetworkMonitor from '../../services/NetworkMonitor';
-import { AlertsDB, AlertEventsDB } from '../../services/Database';
 import {
   startLiveLocationTracking,
   stopLiveLocationTracking,
   sendLiveLocationUpdate,
-  sendSOSToContacts,
   makePhoneCall,
 } from '../../utils/helpers';
 import type { LocationData, EmergencyContact, EmergencySettings } from '../../types';
+import type { SOSPipelineResult } from '../../services/SOSPipelineService';
 
 export const STORAGE_KEYS = {
   SOS_HISTORY: '@girl_safety_sos_history',
@@ -28,6 +26,7 @@ export interface SOSHistoryEntry {
   timestamp: string;
   location: LocationData | null;
   type: string;
+  pipelineResult?: SOSPipelineResult;
 }
 
 export interface SOSDeliveryStatus {
@@ -36,6 +35,8 @@ export interface SOSDeliveryStatus {
   contactCount: number;
   method?: string;
   updatedAt?: string;
+  sosId?: string;
+  auditLogLength?: number;
 }
 
 const INITIAL_SOS_DELIVERY_STATUS: SOSDeliveryStatus = {
@@ -93,66 +94,7 @@ export function useEmergencyStore() {
 
     setIsSOSActive(true);
 
-    // Fetch high-accuracy location with timeout fallback
-    let finalLocation = currentLocation;
-    try {
-      const freshLocation = await Promise.race([
-        Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High
-        }),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Location timeout')), 4500))
-      ]) as any;
-      if (freshLocation?.coords) {
-        finalLocation = {
-          coords: {
-            latitude: freshLocation.coords.latitude,
-            longitude: freshLocation.coords.longitude,
-            altitude: freshLocation.coords.altitude,
-            accuracy: freshLocation.coords.accuracy,
-            altitudeAccuracy: freshLocation.coords.altitudeAccuracy,
-            heading: freshLocation.coords.heading,
-            speed: freshLocation.coords.speed,
-          },
-          timestamp: freshLocation.timestamp,
-        };
-        setCurrentLocation(finalLocation);
-      }
-    } catch (e) {
-      Logger.log('[EmergencyStore] Position grab timeout/error — fallback to last known');
-      if (!finalLocation) {
-        const lastKnown = await OfflineLocationService.getLastKnown();
-        if (lastKnown) {
-          finalLocation = {
-            coords: {
-              latitude: lastKnown.latitude,
-              longitude: lastKnown.longitude,
-              accuracy: lastKnown.accuracy,
-              altitude: null,
-              heading: null,
-              speed: null,
-            },
-            timestamp: lastKnown.timestamp || Date.now(),
-          };
-        }
-      }
-    }
-
-    const alertId = Date.now().toString();
-    const shareToken = 'token_' + Math.random().toString(36).substr(2, 9);
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-
-    const entry: SOSHistoryEntry = {
-      id: alertId,
-      timestamp: new Date().toISOString(),
-      location: finalLocation,
-      type: 'SOS',
-    };
-    setSOSHistory((prev) => {
-      const updated = [entry, ...prev].slice(0, 50);
-      AsyncStorage.setItem(STORAGE_KEYS.SOS_HISTORY, JSON.stringify(updated)).catch(() => {});
-      return updated;
-    });
-
+    // ── 1. Background location SOS mode ──────────────────────
     try {
       await BackgroundLocationService.activateSOSMode();
       Logger.log('[EmergencyStore] Background location SOS mode activated');
@@ -160,59 +102,27 @@ export function useEmergencyStore() {
       Logger.error('[EmergencyStore] Background location SOS mode error:', e);
     }
 
-    // Write alert event and record locally
-    try {
-      await AlertsDB.add({
-        id: alertId,
-        status: 'pending',
-        deliveryAttempts: 1,
-        shareToken,
-        expiresAt,
-        acknowledged: false,
-        respondedTo: false,
-        latitude: finalLocation?.coords?.latitude,
-        longitude: finalLocation?.coords?.longitude,
-        accuracy: finalLocation?.coords?.accuracy,
-      } as any);
-
-      await AlertEventsDB.add({
-        alertId,
-        event: 'created',
-        timestamp: new Date().toISOString(),
-        details: 'SOS alert initiated via trigger',
-      });
-    } catch (e) {
-      Logger.error('[EmergencyStore] Local DB insert failed:', e);
-    }
-
-    const isOnline = NetworkMonitor.isOnline();
+    // ── 2. Start live sharing session ────────────────────────
     let liveShareUrl: string | undefined;
-
-    if (isOnline) {
-      try {
-        if (settings.liveLocationSharing) {
-          const session = await LiveLocationSharingService.startSession({
-            userName: 'SafeHer User',
-            ttlMinutes: 60,
-            purpose: 'SOS Emergency',
-          });
-          if (session?.success && session.shareUrl) {
-            setLiveShareSession(session);
-            setIsLiveSharing(true);
-            liveShareUrl = session.shareUrl;
-            Logger.log('[EmergencyStore] Live sharing started:', session.shareUrl);
-          }
+    try {
+      if (settings.liveLocationSharing) {
+        const session = await LiveLocationSharingService.startSession({
+          userName: 'SafeHer User',
+          ttlMinutes: 60,
+          purpose: 'SOS Emergency',
+        });
+        if (session?.success && session.shareUrl) {
+          setLiveShareSession(session);
+          setIsLiveSharing(true);
+          liveShareUrl = session.shareUrl;
+          Logger.log('[EmergencyStore] Live sharing started:', session.shareUrl);
         }
-      } catch (e) {
-        Logger.error('[EmergencyStore] Live sharing error:', e);
       }
+    } catch (e) {
+      Logger.error('[EmergencyStore] Live sharing error:', e);
     }
 
-    const trackingUrl = `https://safeher-dashboard.vercel.app/alert/${shareToken}`;
-    const alertMessage = liveShareUrl
-      ? `${sosMessage}\n\nLive tracking link: ${liveShareUrl}`
-      : `${sosMessage}\n\nLive tracking link: ${trackingUrl}`;
-
+    // ── 3. PIPELINE: Reliable delivery (retry + SMS fallback) ──
     setSosDeliveryStatus({
       state: 'sending',
       message: `Alerting ${emergencyContacts.length} guardian${emergencyContacts.length === 1 ? '' : 's'}...`,
@@ -220,142 +130,90 @@ export function useEmergencyStore() {
       updatedAt: new Date().toISOString(),
     });
 
-    // Step 6: Native Share sheet pre-fill
+    let pipelineResult: SOSPipelineResult | null = null;
     try {
-      await Share.share({
-        message: alertMessage,
-        url: liveShareUrl || trackingUrl,
-        title: 'SafeHer SOS Alert',
-      });
-    } catch (e) {
-      Logger.error('[EmergencyStore] Native share sheet launch error:', e);
-    }
+      pipelineResult = await SOSPipelineService.execute(
+        emergencyContacts,
+        sosMessage,
+        currentLocation,
+        liveShareUrl,
+      );
 
-    const deliveryLocation = finalLocation || undefined;
-
-    if (!isOnline) {
-      try {
-        // Optimistic Outbox queueing for background retry
-        const outboxData = await AsyncStorage.getItem('@safeher_sos_outbox');
-        const outboxList = outboxData ? JSON.parse(outboxData) : [];
-        outboxList.push({
-          id: alertId,
-          location: finalLocation,
-          message: sosMessage,
-          contacts: emergencyContacts,
-          attempts: 1,
-          status: 'pending',
-        });
-        await AsyncStorage.setItem('@safeher_sos_outbox', JSON.stringify(outboxList));
-
-        await sendSOSToContacts(emergencyContacts, alertMessage, deliveryLocation);
-        setSosDeliveryStatus({
+      // Map pipeline result → delivery status
+      const statusMap: Record<string, SOSDeliveryStatus> = {
+        DELIVERED: {
           state: 'sent',
-          message: 'Offline Mode: Alerts sent to guardians via SMS.',
-          contactCount: emergencyContacts.length,
-          method: 'sms_fallback',
+          message: `SOS ${pipelineResult.deliveryMethod === 'push' ? 'push' : pipelineResult.deliveryMethod === 'sms' ? 'SMS' : 'alerts'} delivered to ${pipelineResult.contactsReached}/${pipelineResult.totalContacts} guardians.`,
+          contactCount: pipelineResult.totalContacts,
+          method: pipelineResult.deliveryMethod,
           updatedAt: new Date().toISOString(),
-        });
-
-        await AlertEventsDB.add({
-          alertId,
-          event: 'contact_notified',
-          timestamp: new Date().toISOString(),
-          details: 'SOS fallback SMS launched',
-        });
-      } catch (e) {
-        Logger.error('[EmergencyStore] Offline SMS trigger error:', e);
-        setSosDeliveryStatus({
+          sosId: pipelineResult.sosId,
+          auditLogLength: pipelineResult.auditLog.length,
+        },
+        FALLBACK_QUEUED: {
+          state: 'unconfirmed',
+          message: 'Device offline. SOS queued — will auto-send when connection resumes. Call emergency services now.',
+          contactCount: pipelineResult.totalContacts,
+          method: 'queued',
+          updatedAt: new Date().toISOString(),
+          sosId: pipelineResult.sosId,
+        },
+        FAILED: {
           state: 'failed',
-          message: 'Alert delivery failed. Call 112 immediately.',
-          contactCount: emergencyContacts.length,
-          method: 'sms_failed',
+          message: `SOS delivery failed after ${pipelineResult.pushAttempts} push attempt(s) and SMS fallback. Call emergency services directly.`,
+          contactCount: pipelineResult.totalContacts,
+          method: 'none',
           updatedAt: new Date().toISOString(),
-        });
+          sosId: pipelineResult.sosId,
+          auditLogLength: pipelineResult.auditLog.length,
+        },
+      };
+
+      const nextStatus = statusMap[pipelineResult.finalStage] || statusMap.FAILED!;
+      setSosDeliveryStatus(nextStatus);
+
+      if (nextStatus.state === 'failed') {
+        Alert.alert(
+          'SOS Alerts Not Confirmed',
+          `Emergency mode is active, but SafeHer could not confirm contact delivery after ${pipelineResult.pushAttempts} retries. Call emergency services directly now.`,
+          [{ text: 'OK', style: 'destructive' }],
+        );
       }
-    } else {
-      try {
-        const [smsAttempt, pushAttempt] = await Promise.allSettled([
-          sendSOSToContacts(emergencyContacts, alertMessage, deliveryLocation),
-          settings.pushNotifications
-            ? NotificationService.sendSOSPushToContacts(emergencyContacts, alertMessage, deliveryLocation)
-            : Promise.resolve({ success: false, sent: 0, total: emergencyContacts.length, reason: 'disabled' }),
-        ]);
-
-        const smsResult = smsAttempt.status === 'fulfilled' ? smsAttempt.value : null;
-        const pushResult = pushAttempt.status === 'fulfilled' ? pushAttempt.value : null;
-        const confirmedSms = smsResult?.method === 'sms' && smsResult?.result === 'sent';
-        const attemptedSms =
-          !!smsResult?.success || smsResult?.method === 'sms_intent' || smsResult?.method === 'individual_sms';
-        const attemptedPush = !!(pushResult?.success && (pushResult.sent || 0) > 0);
-        const nextDeliveryStatus: SOSDeliveryStatus = confirmedSms || attemptedPush
-          ? {
-              state: 'sent',
-              message: confirmedSms
-                ? `SMS confirmed for ${smsResult?.contactCount || emergencyContacts.length} guardian${emergencyContacts.length === 1 ? '' : 's'}.`
-                : `Push alert sent to ${pushResult?.sent || 0} guardian${(pushResult?.sent || 0) === 1 ? '' : 's'}.`,
-              contactCount: emergencyContacts.length,
-              method: confirmedSms ? smsResult?.method : 'push',
-              updatedAt: new Date().toISOString(),
-            }
-          : attemptedSms
-            ? {
-                state: 'unconfirmed',
-                message: 'Guardian alert was opened, but delivery is not confirmed. Call emergency services if unsafe.',
-                contactCount: emergencyContacts.length,
-                method: smsResult?.method,
-                updatedAt: new Date().toISOString(),
-              }
-            : {
-                state: 'failed',
-                message: 'No guardian delivery was confirmed. Call emergency services now.',
-                contactCount: emergencyContacts.length,
-                method: smsResult?.method || pushResult?.reason || 'none',
-                updatedAt: new Date().toISOString(),
-              };
-
-        setSosDeliveryStatus(nextDeliveryStatus);
-
-        // Update DB alert status
-        await AlertsDB.add({
-          id: alertId,
-          status: nextDeliveryStatus.state === 'failed' ? 'failed' : 'delivered',
-          acknowledged: false,
-          respondedTo: false,
-        } as any);
-
-        await AlertEventsDB.add({
-          alertId,
-          event: nextDeliveryStatus.state === 'failed' ? 'failed' : 'contact_notified',
-          timestamp: new Date().toISOString(),
-          details: `SOS alert delivered status: ${nextDeliveryStatus.message}`,
-        });
-
-        if (nextDeliveryStatus.state === 'failed') {
-          Alert.alert(
-            'SOS Alerts Not Confirmed',
-            'Emergency mode is active, but SafeHer could not confirm contact delivery. Call emergency services directly now.',
-            [{ text: 'OK', style: 'destructive' }],
-          );
-        }
-      } catch (e) {
-        Logger.error('[EmergencyStore] Contact delivery error:', e);
-        setSosDeliveryStatus({
-          state: 'failed',
-          message: 'Guardian alert failed. Call emergency services now.',
-          contactCount: emergencyContacts.length,
-          method: 'error',
-          updatedAt: new Date().toISOString(),
-        });
-      }
-
-      try {
-        await NotificationService.sendSOSActiveNotification(deliveryLocation);
-      } catch (e) {
-        Logger.error('[EmergencyStore] Push notification error:', e);
-      }
+    } catch (e) {
+      Logger.error('[EmergencyStore] Pipeline execution error:', e);
+      setSosDeliveryStatus({
+        state: 'failed',
+        message: 'Guardian alert pipeline failed. Call emergency services now.',
+        contactCount: emergencyContacts.length,
+        method: 'error',
+        updatedAt: new Date().toISOString(),
+      });
     }
 
+    // ── 4. Record SOS history ────────────────────────────────
+    const entry: SOSHistoryEntry = {
+      id: pipelineResult?.sosId || Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      location: currentLocation,
+      type: 'SOS',
+      pipelineResult: pipelineResult || undefined,
+    };
+    setSOSHistory((prev) => {
+      const updated = [entry, ...prev].slice(0, 50);
+      AsyncStorage.setItem(STORAGE_KEYS.SOS_HISTORY, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+
+    // ── 5. Local notification ────────────────────────────────
+    try {
+      await NotificationService.sendSOSActiveNotification(
+        currentLocation ? { coords: currentLocation.coords } : undefined,
+      );
+    } catch (e) {
+      Logger.error('[EmergencyStore] Push notification error:', e);
+    }
+
+    // ── 6. Start live location tracking ──────────────────────
     try {
       const subscription = await startLiveLocationTracking((newLocation: LocationData) => {
         setLiveLocation(newLocation);
@@ -374,6 +232,7 @@ export function useEmergencyStore() {
       Logger.error('[EmergencyStore] Failed to start live tracking:', e);
     }
 
+    // ── 7. Nearby user broadcast ─────────────────────────────
     try {
       const sosResult = await OfflineLocationService.shareSOSLocation(
         currentLocation as any, emergencyContacts, sosMessage
@@ -385,6 +244,7 @@ export function useEmergencyStore() {
       Logger.error('[EmergencyStore] Failed to start nearby broadcast:', e);
     }
 
+    // ── 8. AI services (siren, recording, photo) ─────────────
     try {
       const aiResult = await SafetyAIService.activateSOSServices(settings);
       if (aiResult.siren) setSirenActive(true);
@@ -393,6 +253,7 @@ export function useEmergencyStore() {
       Logger.error('[EmergencyStore] AI services activation error:', e);
     }
 
+    // ── 9. Auto-call police ──────────────────────────────────
     if (settings.autoCallPolice) {
       try {
         setTimeout(() => makePhoneCall('112'), 3000);
@@ -401,6 +262,7 @@ export function useEmergencyStore() {
       }
     }
 
+    // ── 10. Periodic location updates to guardians ───────────
     locationUpdateTimerRef.current = setInterval(async () => {
       if (lastLocationSentRef.current && emergencyContacts.length > 0) {
         await sendLiveLocationUpdate(emergencyContacts, lastLocationSentRef.current);
@@ -409,61 +271,6 @@ export function useEmergencyStore() {
 
     lastSOSTriggerRef.current = Date.now();
   }, [isSOSActive, sosHistory]);
-
-  const processSosOutbox = useCallback(async () => {
-    if (!NetworkMonitor.isOnline()) return;
-    try {
-      const outboxData = await AsyncStorage.getItem('@safeher_sos_outbox');
-      if (!outboxData) return;
-      const outboxList = JSON.parse(outboxData);
-      if (outboxList.length === 0) return;
-
-      const remainingItems: any[] = [];
-      for (const item of outboxList) {
-        try {
-          const trackingUrl = `https://safeher-dashboard.vercel.app/alert/${item.id}`;
-          const alertMessage = `${item.message}\n\nLive tracking link: ${trackingUrl}`;
-          await sendSOSToContacts(item.contacts, alertMessage, item.location);
-          
-          await AlertsDB.add({
-            id: item.id,
-            status: 'delivered',
-            acknowledged: false,
-            respondedTo: false,
-          } as any);
-
-          await AlertEventsDB.add({
-            alertId: item.id,
-            event: 'contact_notified',
-            timestamp: new Date().toISOString(),
-            details: 'Outbox message delivered successfully via retry',
-          });
-        } catch (e) {
-          item.attempts += 1;
-          if (item.attempts < 5) {
-            remainingItems.push(item);
-          } else {
-            await AlertEventsDB.add({
-              alertId: item.id,
-              event: 'failed',
-              timestamp: new Date().toISOString(),
-              details: `Outbox retry failed: max attempts reached: ${e}`,
-            });
-          }
-        }
-      }
-      await AsyncStorage.setItem('@safeher_sos_outbox', JSON.stringify(remainingItems));
-    } catch (e) {
-      Logger.error('[EmergencyStore] Outbox processing error:', e);
-    }
-  }, []);
-
-  useEffect(() => {
-    const outboxInterval = setInterval(() => {
-      processSosOutbox();
-    }, 30000);
-    return () => clearInterval(outboxInterval);
-  }, [processSosOutbox]);
 
   const cancelSOS = useCallback(async (
     settings: EmergencySettings,
@@ -475,6 +282,13 @@ export function useEmergencyStore() {
     setIsRecording(false);
     setSosDeliveryStatus(INITIAL_SOS_DELIVERY_STATUS);
     lastSOSTriggerRef.current = 0;
+
+    // Mark the SOS pipeline as resolved (prevents background re-notification)
+    try {
+      await SOSPipelineService.resolveActiveSOS();
+    } catch (e) {
+      Logger.error('[EmergencyStore] Pipeline resolve error:', e);
+    }
 
     try {
       await SafetyAIService.deactivateSOSServices();
