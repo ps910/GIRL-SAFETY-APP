@@ -32,6 +32,8 @@ import { getLocalEmergencyNumbers, makePhoneCall, vibrateEmergency } from '../ut
 import { SOSButton, ProtectionTile, ContextCard, StatusDot, Pill, FloatingOrb, T } from '../components/ui';
 import { colors, spacing, radius } from '@safeher/shared';
 import VoiceTriggerService from '../services/VoiceTriggerService';
+import CrimeZoneService from '../services/CrimeZoneService';
+import BackgroundLocationService from '../services/BackgroundLocationService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SOS_COUNTDOWN_DEFAULT = 5;
@@ -77,9 +79,20 @@ export default function HomeScreen() {
   const [isNightMode, setIsNightMode] = useState(VoiceTriggerService.isNightTime());
   const countdownRef = useRef(null);
   const fadeIn = useRef(new Animated.Value(0)).current;
+  const [currentZone, setCurrentZone] = useState(CrimeZoneService.getCurrentZone());
+  const [zoneIncidents, setZoneIncidents] = useState(null);
 
   useEffect(() => {
     Animated.timing(fadeIn, { toValue: 1, duration: 400, useNativeDriver: true, easing: Easing.out(Easing.quad) }).start();
+
+    // Initialize zone service and listen for zone changes
+    BackgroundLocationService.initZoneService();
+    BackgroundLocationService.setOnZoneChange((result) => {
+      setCurrentZone(result.zone);
+      setZoneIncidents(result.incidentCount || null);
+    });
+
+    return () => BackgroundLocationService.setOnZoneChange(null);
   }, [fadeIn]);
 
   // ── Night Safety Auto-Mode ─────────────────────────────────
@@ -403,6 +416,30 @@ export default function HomeScreen() {
             <Ionicons name="settings-outline" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
+
+        {/* ── Zone Safety Banner ── */}
+        {currentZone === 'red' && (
+          <View style={styles.zoneBannerRed}>
+            <Ionicons name="warning" size={18} color="#fff" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.zoneBannerTitle}>⚠️ High-Risk Area</Text>
+              <Text style={styles.zoneBannerText}>
+                You are in a zone with high incident reports{zoneIncidents ? ` (${zoneIncidents} recent)` : ''}. Stay alert. Your guardians have been notified.
+              </Text>
+            </View>
+          </View>
+        )}
+        {currentZone === 'yellow' && (
+          <View style={styles.zoneBannerYellow}>
+            <Ionicons name="alert-circle" size={18} color="#92400E" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={[styles.zoneBannerTitle, { color: '#92400E' }]}>Moderate Risk Area</Text>
+              <Text style={[styles.zoneBannerText, { color: '#78350F' }]}>
+                This area has some reported incidents. Stay aware of your surroundings.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* ── Context Card ── */}
         <View style={[styles.contextCard, styles[`context_${homeState.tone}`]]}>
@@ -938,4 +975,37 @@ const styles = StyleSheet.create({
   calcEqual: { backgroundColor: colors.primary },
   calcClear: { backgroundColor: colors.textHint },
   calcButtonText: { color: colors.white, fontSize: 28, fontWeight: '500' },
+
+  // Zone banners
+  zoneBannerRed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239,68,68,0.2)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239,68,68,0.5)',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  zoneBannerYellow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245,158,11,0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245,158,11,0.4)',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  zoneBannerTitle: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  zoneBannerText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 11,
+    marginTop: 3,
+    lineHeight: 16,
+  },
 });

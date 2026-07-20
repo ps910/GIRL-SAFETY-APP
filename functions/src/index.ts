@@ -598,3 +598,344 @@ exports.expireLiveSessions = functions.pubsub.schedule("every 1 minutes").onRun(
     return null;
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// CRIME ZONE CLASSIFICATION
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * recalculateZones — Cron (every 6 hours)
+ * Queries all SOS events from the last 90 days, clusters them geographically
+ * (500m radius), and auto-classifies zones as Red/Yellow/Green.
+ *
+ * Red:    5+ incidents within 500m radius
+ * Yellow: 2-4 incidents within 500m radius
+ * Green:  0-1 incidents (default)
+ */
+exports.recalculateZones = functions.pubsub
+  .schedule("every 6 hours")
+  .timeZone("Asia/Kolkata")
+  .onRun(async () => {
+    const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+
+    try {
+      // Fetch all SOS events from last 90 days
+      const sosRef = db.ref("sos_events");
+      const snapshot = await sosRef.orderByChild("_syncedAt").startAt(new Date(ninetyDaysAgo).toISOString()).once("value");
+
+      if (!snapshot.exists()) {
+        functions.logger.info("recalculateZones: No SOS events in last 90 days");
+        return null;
+      }
+
+      // Collect all SOS locations
+      const locations: Array<{ lat: number; lng: number; timestamp: string }> = [];
+      snapshot.forEach((child: any) => {
+        const event = child.val();
+        if (isValidLatLng(event.latitude, event.longitude)) {
+          locations.push({
+            lat: event.latitude,
+            lng: event.longitude,
+            timestamp: event._syncedAt || "",
+          });
+        }
+        return false;
+      });
+
+      if (locations.length === 0) return null;
+
+      // Simple clustering: group by 500m proximity
+      const CLUSTER_RADIUS_M = 500;
+      const clusters: Array<{ centerLat: number; centerLng: number; count: number; lastIncident: string }> = [];
+
+      for (const loc of locations) {
+        let foundCluster = false;
+        for (const cluster of clusters) {
+          const dist = haversineDistanceFn(loc.lat, loc.lng, cluster.centerLat, cluster.centerLng);
+          if (dist <= CLUSTER_RADIUS_M) {
+            cluster.count++;
+            if (loc.timestamp > cluster.lastIncident) cluster.lastIncident = loc.timestamp;
+            // Update center as running average
+            cluster.centerLat = (cluster.centerLat * (cluster.count - 1) + loc.lat) / cluster.count;
+            cluster.centerLng = (cluster.centerLng * (cluster.count - 1) + loc.lng) / cluster.count;
+            foundCluster = true;
+            break;
+          }
+        }
+        if (!foundCluster) {
+          clusters.push({ centerLat: loc.lat, centerLng: loc.lng, count: 1, lastIncident: loc.timestamp });
+        }
+      }
+
+      // Write zones to RTDB
+      const zonesUpdate: Record<string, any> = {};
+      for (let i = 0; i < clusters.length; i++) {
+        const c = clusters[i];
+        const type = c.count >= 5 ? "red" : c.count >= 2 ? "yellow" : "green";
+        const zoneId = `zone_${i}_${encodeGeohashFn(c.centerLat, c.centerLng, 5)}`;
+        zonesUpdate[zoneId] = {
+          centerLat: c.centerLat,
+          centerLng: c.centerLng,
+          radiusMeters: CLUSTER_RADIUS_M,
+          type,
+          incidentCount: c.count,
+          lastIncidentAt: c.lastIncident,
+          lastUpdated: new Date().toISOString(),
+          geohash: encodeGeohashFn(c.centerLat, c.centerLng, 6),
+        };
+      }
+
+      await db.ref("crime_zones").set(zonesUpdate);
+      functions.logger.info(`recalculateZones: Classified ${clusters.length} zones (${locations.length} events)`);
+      return null;
+    } catch (error) {
+      functions.logger.error("recalculateZones error:", error);
+      return null;
+    }
+  });
+
+/**
+ * onZoneEntry — RTDB trigger
+ * When a user's current_zone changes to 'red', push notification to all guardians.
+ */
+exports.onZoneEntry = functions.database
+  .ref("users/{uid}/current_zone/type")
+  .onWrite(async (change, context) => {
+    const newZone = change.after.val();
+    const oldZone = change.before.val();
+    const uid = context.params.uid;
+
+    // Only alert on zone escalation to red
+    if (newZone !== "red" || oldZone === "red") return null;
+
+    try {
+      // Get user's guardian contacts
+      const userRef = db.ref(`users/${uid}`);
+      const userSnap = await userRef.once("value");
+      if (!userSnap.exists()) return null;
+
+      const userData = userSnap.val();
+      const contacts = userData.emergencyContacts || [];
+      const userName = userData.displayName || "SafeHer User";
+
+      // Get zone location
+      const zoneData = (await db.ref(`users/${uid}/current_zone`).once("value")).val();
+      const lat = zoneData?.lat || 0;
+      const lng = zoneData?.lng || 0;
+
+      // Send push to guardians
+      const tokens: string[] = [];
+      for (const contact of contacts) {
+        if (contact.pushToken) tokens.push(contact.pushToken);
+      }
+
+      if (tokens.length > 0) {
+        const message = {
+          notification: {
+            title: "⚠️ High-Risk Area Alert",
+            body: `${userName} has entered a high-risk area. Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+          },
+          data: {
+            type: "zone_alert",
+            zone: "red",
+            uid,
+            lat: String(lat),
+            lng: String(lng),
+          },
+        };
+
+        const sendResults = await Promise.allSettled(
+          tokens.map(token => admin.messaging().send({ ...message, token })),
+        );
+
+        const sent = sendResults.filter(r => r.status === "fulfilled").length;
+        functions.logger.info(`onZoneEntry: Sent ${sent}/${tokens.length} guardian alerts for ${uid}`);
+      }
+
+      return null;
+    } catch (error) {
+      functions.logger.error("onZoneEntry error:", error);
+      return null;
+    }
+  });
+
+// ═══════════════════════════════════════════════════════════════════
+// COMMUNITY SOS BROADCAST
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * broadcastCommunityAlert — RTDB trigger
+ * When a new community_alert is created, find nearby users via geohash
+ * prefix matching and send them push notifications.
+ */
+exports.broadcastCommunityAlert = functions.database
+  .ref("community_alerts/{alertId}")
+  .onCreate(async (snapshot, context) => {
+    const alert = snapshot.val();
+    const alertId = context.params.alertId;
+
+    if (!alert || !alert.geohash || !alert.isActive) return null;
+
+    try {
+      // Get all users with location data
+      const usersRef = db.ref("users");
+      const usersSnap = await usersRef.once("value");
+      if (!usersSnap.exists()) return null;
+
+      const geohashPrefix = alert.geohash.substring(0, 4); // ~20km precision
+      const tokens: string[] = [];
+      let matchCount = 0;
+
+      usersSnap.forEach((child: any) => {
+        const user = child.val();
+        const uid = child.key;
+
+        // Skip the victim
+        if (uid === alert.victimUid) return false;
+
+        // Check geohash proximity
+        const userZone = user.current_zone;
+        if (userZone?.geohash?.startsWith(geohashPrefix)) {
+          // Refined check: calculate actual distance
+          if (userZone.lat && userZone.lng) {
+            const dist = haversineDistanceFn(
+              alert.latitude, alert.longitude,
+              userZone.lat, userZone.lng,
+            );
+            if (dist <= 3000) { // 3km radius
+              if (user.fcmToken) {
+                tokens.push(user.fcmToken);
+                matchCount++;
+              }
+            }
+          }
+        }
+        return false;
+      });
+
+      if (tokens.length > 0) {
+        const distText = "nearby";
+        const message = {
+          notification: {
+            title: "🚨 Someone Nearby Needs Help!",
+            body: `${alert.victimName || "Someone"} triggered SOS ${distText}. Tap to see how you can help.`,
+          },
+          data: {
+            type: "community_sos",
+            alertId,
+            latitude: String(alert.latitude),
+            longitude: String(alert.longitude),
+            victimName: alert.victimName || "Someone",
+          },
+          android: {
+            priority: "high" as const,
+            notification: {
+              channelId: "sos_alerts",
+              priority: "max" as const,
+              sound: "sos_alert",
+            },
+          },
+        };
+
+        // Send in batches of 100
+        for (let i = 0; i < tokens.length; i += 100) {
+          const batch = tokens.slice(i, i + 100);
+          await Promise.allSettled(
+            batch.map(token => admin.messaging().send({ ...message, token })),
+          );
+        }
+
+        functions.logger.info(`broadcastCommunityAlert: Notified ${matchCount} nearby users for alert ${alertId}`);
+      } else {
+        functions.logger.info(`broadcastCommunityAlert: No nearby users found for alert ${alertId}`);
+      }
+
+      return null;
+    } catch (error) {
+      functions.logger.error("broadcastCommunityAlert error:", error);
+      return null;
+    }
+  });
+
+/**
+ * expireCommunityAlerts — Cron (every 5 minutes)
+ * Cleans up community alerts that have expired (>30 min old).
+ */
+exports.expireCommunityAlerts = functions.pubsub
+  .schedule("every 5 minutes")
+  .timeZone("Asia/Kolkata")
+  .onRun(async () => {
+    const now = Date.now();
+
+    try {
+      const alertsRef = db.ref("community_alerts");
+      const snapshot = await alertsRef.orderByChild("expiresAt").endAt(now).once("value");
+
+      if (!snapshot.exists()) return null;
+
+      const updates: Record<string, any> = {};
+      let expiredCount = 0;
+
+      snapshot.forEach((child: any) => {
+        const alert = child.val();
+        if (alert.isActive && alert.expiresAt <= now) {
+          updates[`community_alerts/${child.key}/isActive`] = false;
+          updates[`community_alerts/${child.key}/resolvedAt`] = now;
+          expiredCount++;
+        }
+        return false;
+      });
+
+      if (expiredCount > 0) {
+        await db.ref().update(updates);
+        functions.logger.info(`expireCommunityAlerts: Expired ${expiredCount} alert(s)`);
+      }
+
+      return null;
+    } catch (error) {
+      functions.logger.error("expireCommunityAlerts error:", error);
+      return null;
+    }
+  });
+
+// ── Utility functions for Cloud Functions ────────────────────────
+function haversineDistanceFn(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const BASE32_CHARS = "0123456789bcdefghjkmnpqrstuvwxyz";
+
+function encodeGeohashFn(lat: number, lng: number, precision: number = 6): string {
+  let minLat = -90, maxLat = 90;
+  let minLng = -180, maxLng = 180;
+  let hash = "";
+  let isLng = true;
+  let bit = 0;
+  let ch = 0;
+
+  while (hash.length < precision) {
+    if (isLng) {
+      const mid = (minLng + maxLng) / 2;
+      if (lng >= mid) { ch |= (1 << (4 - bit)); minLng = mid; }
+      else { maxLng = mid; }
+    } else {
+      const mid = (minLat + maxLat) / 2;
+      if (lat >= mid) { ch |= (1 << (4 - bit)); minLat = mid; }
+      else { maxLat = mid; }
+    }
+    isLng = !isLng;
+    bit++;
+    if (bit === 5) {
+      hash += BASE32_CHARS[ch];
+      bit = 0;
+      ch = 0;
+    }
+  }
+  return hash;
+}

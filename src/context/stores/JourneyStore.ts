@@ -20,6 +20,12 @@ export interface Breadcrumb {
   timestamp: string;
   moving: boolean;
   distFromPrev: number;
+  /** True if this point is part of a detected stop */
+  isStop?: boolean;
+  /** Duration of the stop in ms (set on the last breadcrumb of a stop) */
+  stopDuration?: number;
+  /** Reverse-geocoded address of the stop (populated asynchronously) */
+  stopAddress?: string;
 }
 
 export interface JourneyStats {
@@ -137,7 +143,26 @@ export function useJourneyStore(
             timestamp: ts,
             moving: moved,
             distFromPrev: dist,
+            isStop: false,
           };
+
+          // Stop detection: speed < 0.5 m/s = stationary
+          const isStationary = (speed || 0) < 0.5;
+          const prevCrumbs = journeyBreadcrumbsRef.current;
+          if (isStationary && prevCrumbs.length > 0) {
+            const lastMovingIdx = [...prevCrumbs].reverse().findIndex(c => (c.speed || 0) >= 0.5);
+            if (lastMovingIdx >= 1) {
+              // We've been stationary for multiple points
+              const stopStartCrumb = prevCrumbs[prevCrumbs.length - lastMovingIdx];
+              if (stopStartCrumb) {
+                const stopDurationMs = new Date(ts).getTime() - new Date(stopStartCrumb.timestamp).getTime();
+                if (stopDurationMs > 60000) {
+                  crumb.isStop = true;
+                  crumb.stopDuration = stopDurationMs;
+                }
+              }
+            }
+          }
 
           lastBreadcrumbRef.current = crumb;
           journeyBreadcrumbsRef.current = [...journeyBreadcrumbsRef.current, crumb];

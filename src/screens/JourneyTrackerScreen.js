@@ -138,22 +138,26 @@ export default function JourneyTrackerScreen() {
         />
       ) : (
         journeyHistory?.slice(0, 10).map((j, i) => (
-          <Card key={i}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={[styles.histIcon, { backgroundColor: j.status === 'overdue' ? `${T.danger}22` : `${T.success}22` }]}>
-                <Ionicons name={j.status === 'overdue' ? 'alert' : 'checkmark'} size={16} color={j.status === 'overdue' ? T.danger : T.success} />
+          <TouchableOpacity key={i} activeOpacity={0.7} onPress={() => navigation.navigate('JourneyReplay', { journey: j })}>
+            <Card>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={[styles.histIcon, { backgroundColor: j.status === 'overdue' ? `${T.danger}22` : `${T.success}22` }]}>
+                  <Ionicons name={j.status === 'overdue' ? 'alert' : 'checkmark'} size={16} color={j.status === 'overdue' ? T.danger : T.success} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.histDest}>{j.destination}</Text>
+                  <Text style={styles.histTime}>
+                    {new Date(j.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </Text>
+                  <Text style={styles.histStats}>
+                    {((j.stats?.distance || 0) / 1000).toFixed(1)} km • {j.breadcrumbs?.length || 0} GPS points
+                    {j.breadcrumbs?.filter(b => b.isStop).length > 0 ? ` • ${j.breadcrumbs.filter(b => b.isStop).length} stops` : ''}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={T.textHint} />
               </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.histDest}>{j.destination}</Text>
-                <Text style={styles.histTime}>
-                  {new Date(j.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                </Text>
-                <Text style={styles.histStats}>
-                  {((j.stats?.distance || 0) / 1000).toFixed(1)} km • {j.breadcrumbs?.length || 0} GPS points
-                </Text>
-              </View>
-            </View>
-          </Card>
+            </Card>
+          </TouchableOpacity>
         ))
       )}
     </Screen>

@@ -17,6 +17,8 @@ import * as SMS from 'expo-sms';
 import { Platform } from 'react-native';
 import NotificationService from './NotificationService';
 import CloudSyncService from './CloudSyncService';
+import ProximitySOSService from './ProximitySOSService';
+import EvidenceRecordingService from './EvidenceRecordingService';
 import Logger from '../utils/logger';
 
 import type { EmergencyContact, LocationData } from '../types';
@@ -216,6 +218,34 @@ class SOSPipelineServiceClass {
       } catch (e) {
         Logger.error('[SOSPipeline] Cloud sync error:', e);
       }
+    }
+
+    // ── STAGE: Community Broadcast ──────────────────────────────
+    // Broadcast SOS to nearby SafeHer users (2-3km radius)
+    if (isOnline && location) {
+      try {
+        const userName = contacts[0]?.name?.split(' ')[0] || 'User';
+        await ProximitySOSService.broadcastAlert(
+          sosId,
+          '', // victimUid — filled by caller
+          userName,
+          fullMessage,
+          location.latitude,
+          location.longitude,
+        );
+        this._log(auditLog, 'DELIVERED' as any, undefined, 'Community broadcast sent');
+      } catch (e) {
+        Logger.error('[SOSPipeline] Community broadcast error:', e);
+      }
+    }
+
+    // ── STAGE: Evidence Recording ─────────────────────────────
+    // Auto-start audio recording + periodic camera snapshots
+    try {
+      await EvidenceRecordingService.startSOSRecording(sosId);
+      this._log(auditLog, 'DELIVERED' as any, undefined, 'Evidence recording started');
+    } catch (e) {
+      Logger.error('[SOSPipeline] Evidence recording error:', e);
     }
 
     this._notifyListeners(result);

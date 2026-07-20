@@ -52,8 +52,10 @@ interface Props {
 
 export default function LivenessVerificationScreen({ navigation, onVerificationComplete }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [stage, setStage] = useState<'intro' | 'camera' | 'processing' | 'success' | 'failed'>('intro');
+  const [stage, setStage] = useState<'intro' | 'gender' | 'camera' | 'processing' | 'success' | 'failed'>('intro');
   const [challenges, setChallenges] = useState<LivenessChallenge[]>([]);
+  const [selectedGender, setSelectedGender] = useState<string | null>(null);
+  const [selectedIdType, setSelectedIdType] = useState<string | null>(null);
   const [currentChallengeIdx, setCurrentChallengeIdx] = useState(0);
   const [challengesPassed, setChallengesPassed] = useState(0);
   const [canAttempt, setCanAttempt] = useState(true);
@@ -116,6 +118,16 @@ export default function LivenessVerificationScreen({ navigation, onVerificationC
     Animated.timing(progressAnim, { toValue: 0, duration: 0, useNativeDriver: false }).start();
     setStage('camera');
   }, [canAttempt, permission]);
+
+  const handleGenderContinue = useCallback(async () => {
+    if (selectedGender) {
+      await IdentityVerificationService.setGenderDeclaration(selectedGender);
+    }
+    if (selectedIdType) {
+      await IdentityVerificationService.setGovernmentId(selectedIdType);
+    }
+    startVerification();
+  }, [selectedGender, selectedIdType, startVerification]);
 
   const handleChallengePass = useCallback(async () => {
     const nextPassed = challengesPassed + 1;
@@ -193,12 +205,12 @@ export default function LivenessVerificationScreen({ navigation, onVerificationC
 
       <TouchableOpacity
         style={[styles.primaryButton, !canAttempt && styles.disabledButton]}
-        onPress={startVerification}
+        onPress={() => setStage('gender')}
         disabled={!canAttempt}
         activeOpacity={0.8}
       >
         <Ionicons name="scan" size={22} color="#FFF" />
-        <Text style={styles.primaryButtonText}>Start Verification</Text>
+        <Text style={styles.primaryButtonText}>Continue</Text>
       </TouchableOpacity>
 
       {!canAttempt && (
@@ -210,6 +222,87 @@ export default function LivenessVerificationScreen({ navigation, onVerificationC
       <Text style={styles.attemptsText}>
         {remainingAttempts} attempt{remainingAttempts !== 1 ? 's' : ''} remaining today
       </Text>
+
+      <TouchableOpacity
+        style={styles.skipButton}
+        onPress={() => navigation.goBack()}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.skipText}>Skip for now</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+
+  // ── Gender Declaration Stage ────────────────────────────────
+  const GENDER_OPTIONS = [
+    { label: 'Woman', icon: '👩' as const, value: 'woman' },
+    { label: 'Non-binary', icon: '🧑' as const, value: 'non-binary' },
+    { label: 'Prefer not to say', icon: '✨' as const, value: 'undisclosed' },
+  ];
+
+  const ID_TYPE_OPTIONS = ['Aadhaar Card', 'Driving License', 'Passport', 'Voter ID'];
+
+  const renderGender = () => (
+    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+      <View style={styles.iconContainer}>
+        <View style={[styles.shieldIcon, { backgroundColor: 'rgba(108,99,255,0.12)' }]}>
+          <Ionicons name="person" size={48} color={COLORS.primary} />
+        </View>
+      </View>
+
+      <Text style={styles.title}>Tell us about yourself</Text>
+      <Text style={styles.subtitle}>
+        SafeHer is designed for women's safety. This helps us verify your identity and keep the community safe.
+      </Text>
+
+      <Text style={[styles.subtitle, { fontSize: 12, marginTop: 24, marginBottom: 12, textAlign: 'left', fontWeight: '700' as const, color: COLORS.text, letterSpacing: 1 }]}>
+        GENDER IDENTITY
+      </Text>
+      <View style={{ gap: 8 }}>
+        {GENDER_OPTIONS.map(opt => (
+          <TouchableOpacity
+            key={opt.value}
+            style={[styles.stepRow, selectedGender === opt.value && { borderColor: COLORS.primary, backgroundColor: 'rgba(108,99,255,0.12)' }]}
+            onPress={() => setSelectedGender(opt.value)}
+            activeOpacity={0.8}
+          >
+            <Text style={{ fontSize: 24, marginRight: 14 }}>{opt.icon}</Text>
+            <Text style={[styles.stepText, selectedGender === opt.value && { color: COLORS.primaryLight, fontWeight: '700' as const }]}>{opt.label}</Text>
+            {selectedGender === opt.value && (
+              <Ionicons name="checkmark-circle" size={22} color={COLORS.primary} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={[styles.subtitle, { fontSize: 12, marginTop: 24, marginBottom: 12, textAlign: 'left', fontWeight: '700' as const, color: COLORS.text, letterSpacing: 1 }]}>
+        GOVERNMENT ID (OPTIONAL)
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {ID_TYPE_OPTIONS.map(id => (
+          <TouchableOpacity
+            key={id}
+            style={[{
+              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+              backgroundColor: selectedIdType === id ? COLORS.primary : COLORS.surface,
+              borderWidth: 1, borderColor: selectedIdType === id ? COLORS.primary : COLORS.border,
+            }]}
+            onPress={() => setSelectedIdType(selectedIdType === id ? null : id)}
+          >
+            <Text style={{ color: selectedIdType === id ? '#fff' : COLORS.textMuted, fontSize: 12, fontWeight: '600' as const }}>{id}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <TouchableOpacity
+        style={[styles.primaryButton, !selectedGender && styles.disabledButton, { marginTop: 28 }]}
+        onPress={handleGenderContinue}
+        disabled={!selectedGender}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="scan" size={22} color="#FFF" />
+        <Text style={styles.primaryButtonText}>Proceed to Liveness Check</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.skipButton}
@@ -334,6 +427,7 @@ export default function LivenessVerificationScreen({ navigation, onVerificationC
   return (
     <View style={styles.screen}>
       {stage === 'intro' && renderIntro()}
+      {stage === 'gender' && renderGender()}
       {stage === 'camera' && renderCamera()}
       {stage === 'processing' && renderProcessing()}
       {stage === 'success' && renderSuccess()}

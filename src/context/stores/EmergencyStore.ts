@@ -7,6 +7,7 @@ import NotificationService from '../../services/NotificationService';
 import OfflineLocationService from '../../services/OfflineLocationService';
 import SafetyAIService from '../../services/SafetyAIService';
 import SOSPipelineService from '../../services/SOSPipelineService';
+import EvidenceRecordingService from '../../services/EvidenceRecordingService';
 import Logger from '../../utils/logger';
 import {
   startLiveLocationTracking,
@@ -294,6 +295,14 @@ export function useEmergencyStore() {
       await SafetyAIService.deactivateSOSServices();
     } catch (e) {
       Logger.error('[EmergencyStore] AI deactivation error:', e);
+    }
+
+    // Stop evidence recording (audio + camera)
+    try {
+      await EvidenceRecordingService.stopRecording();
+      Logger.log('[EmergencyStore] Evidence recording stopped');
+    } catch (e) {
+      Logger.error('[EmergencyStore] Evidence recording stop error:', e);
     }
 
     try {

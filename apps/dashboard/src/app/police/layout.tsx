@@ -7,6 +7,8 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: '📊', href: '/police/dashboard' },
   { label: 'My Cases', icon: '📋', href: '/police/cases' },
   { label: 'Live Map', icon: '🗺️', href: '/police/map' },
+  { label: 'Crime Zones', icon: '🔴', href: '/police/zones' },
+  { label: 'Case Database', icon: '🗄️', href: '/police/database' },
   { label: 'Respond', icon: '🚨', href: '/police/respond' },
 ];
 

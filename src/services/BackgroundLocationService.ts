@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Logger from '../utils/logger';
 import SOSPipelineService from './SOSPipelineService';
+import CrimeZoneService, { type ZoneCheckResult } from './CrimeZoneService';
 
 const BACKGROUND_LOCATION_TASK = 'SAFEHER_BACKGROUND_LOCATION';
 const STORAGE_KEY = '@gs_background_locations';
@@ -48,6 +49,8 @@ interface PermissionResult {
 let _locationCallback: ((locations: Location.LocationObject[]) => void) | null = null;
 let _isTracking = false;
 let _sosActive = false;
+let _lastZoneCheck: ZoneCheckResult | null = null;
+let _onZoneChange: ((result: ZoneCheckResult) => void) | null = null;
 
 // ─── Define the background task (guard against repeat registration on hot-reload) ───
 if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
@@ -99,6 +102,23 @@ TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }: TaskMan
         } catch (e) {
           Logger.error('[BG Location] Callback error:', e);
         }
+      }
+
+      // Zone check — detect Red/Yellow/Green zone entry
+      try {
+        const zoneResult = CrimeZoneService.getZoneForLocation(
+          latest.coords.latitude,
+          latest.coords.longitude,
+        );
+        if (zoneResult.changed) {
+          Logger.log(`[BG Location] Zone changed to: ${zoneResult.zone} (${zoneResult.zoneId || 'none'})`);
+          _lastZoneCheck = zoneResult;
+          if (_onZoneChange) {
+            _onZoneChange(zoneResult);
+          }
+        }
+      } catch (e) {
+        Logger.error('[BG Location] Zone check error:', e);
       }
     }
   }
@@ -279,6 +299,34 @@ const BackgroundLocationService = {
     } catch (e) {
       Logger.error('[BG Location] Offline queue flush error:', e);
       return 0;
+    }
+  },
+
+  // ─── Zone Management ───────────────────────────────────────────
+
+  /**
+   * Register a callback for zone changes (Red/Yellow/Green).
+   */
+  setOnZoneChange(cb: ((result: ZoneCheckResult) => void) | null): void {
+    _onZoneChange = cb;
+  },
+
+  /**
+   * Get the last zone check result.
+   */
+  getLastZoneCheck(): ZoneCheckResult | null {
+    return _lastZoneCheck;
+  },
+
+  /**
+   * Initialize crime zone service (call on app startup).
+   */
+  async initZoneService(): Promise<void> {
+    try {
+      await CrimeZoneService.init();
+      Logger.log('[BG Location] CrimeZoneService initialized');
+    } catch (e) {
+      Logger.error('[BG Location] Zone init error:', e);
     }
   },
 };

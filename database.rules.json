@@ -95,6 +95,41 @@
       "$caseId": {
         ".write": "auth != null && (auth.token.police === true || auth.token.admin === true)"
       }
+    },
+
+    "crime_zones": {
+      ".read": "auth != null",
+      ".write": "auth != null && (auth.token.admin === true || auth.token.police === true)",
+      "$zoneId": {
+        ".validate": "newData.hasChildren(['centerLat', 'centerLng', 'type', 'incidentCount'])"
+      }
+    },
+
+    "community_alerts": {
+      ".read": "auth != null",
+      "$alertId": {
+        ".write": "auth != null && (!data.exists() || data.child('victimUid').val() === auth.uid || auth.token.admin === true)",
+        "helpers": {
+          "$helperUid": {
+            ".write": "auth != null && auth.uid === $helperUid"
+          }
+        },
+        "liveLocation": {
+          ".write": "auth != null && (data.parent().child('victimUid').val() === auth.uid || auth.token.admin === true)"
+        }
+      }
+    },
+
+    "case_database": {
+      ".read": "auth != null && (auth.token.admin === true || auth.token.police === true)",
+      ".write": "auth != null && (auth.token.admin === true || auth.token.police === true)"
+    },
+
+    "verification_queue": {
+      ".read": "auth != null && auth.token.admin === true",
+      "$userId": {
+        ".write": "auth != null && (auth.uid === $userId || auth.token.admin === true)"
+      }
     }
   }
 }

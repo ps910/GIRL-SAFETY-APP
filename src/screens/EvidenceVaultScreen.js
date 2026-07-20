@@ -7,17 +7,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList, Alert, Modal,
-  Image, ActivityIndicator, Platform, RefreshControl,
+  Image, ActivityIndicator, Platform, RefreshControl, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as Crypto from 'expo-crypto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { useNavigation } from '@react-navigation/native';
 import { EvidenceDB } from '../services/Database';
 import { useAuth } from '../context/AuthContext';
+import EvidenceRecordingService from '../services/EvidenceRecordingService';
 import {
   Screen, Header, Card, SectionTitle, PrimaryBtn, GhostBtn,
   Input, Label, EmptyState, Stat, Pill, T,
@@ -37,8 +40,56 @@ export default function EvidenceVaultScreen() {
   // ─── Vault lock ─────────────────────────────────────────────
   const [unlocked, setUnlocked] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  const [passkeySet, setPasskeySet] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [sosRecordings, setSosRecordings] = useState([]);
 
-  useEffect(() => { tryUnlock(); }, []);
+  const PASSKEY_HASH_KEY = '@safeher_vault_passkey_hash';
+
+  useEffect(() => {
+    // Check if passkey is set
+    AsyncStorage.getItem(PASSKEY_HASH_KEY).then(hash => {
+      if (hash) setPasskeySet(true);
+      else tryUnlock();
+    });
+  }, []);
+
+  const hashPin = async (pin) => {
+    return await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      `safeher_vault_${pin}`,
+    );
+  };
+
+  const setupPasskey = async () => {
+    if (pinInput.length < 4) {
+      Alert.alert('Too Short', 'Passkey must be at least 4 digits.');
+      return;
+    }
+    const hash = await hashPin(pinInput);
+    await AsyncStorage.setItem(PASSKEY_HASH_KEY, hash);
+    setPasskeySet(true);
+    setShowPinSetup(false);
+    setPinInput('');
+    setUnlocked(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const verifyPasskey = async () => {
+    const storedHash = await AsyncStorage.getItem(PASSKEY_HASH_KEY);
+    if (!storedHash) { setUnlocked(true); return; }
+    const inputHash = await hashPin(pinInput);
+    if (inputHash === storedHash) {
+      setUnlocked(true);
+      setPinInput('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      Alert.alert('Wrong Passkey', 'Please try again.');
+      setPinInput('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  };
 
   const tryUnlock = useCallback(async () => {
     if (!hasPin && !biometricEnabled) { setUnlocked(true); return; }
@@ -54,10 +105,18 @@ export default function EvidenceVaultScreen() {
           if (result.success) { setUnlocked(true); return; }
         }
       }
-      // No biometric → fall back to opening (PIN flow can be added later)
       setUnlocked(true);
     } finally { setUnlocking(false); }
   }, [hasPin, biometricEnabled]);
+
+  // Load SOS recordings
+  useEffect(() => {
+    if (unlocked) {
+      EvidenceRecordingService.getRecordingsList().then(list => {
+        setSosRecordings(list || []);
+      }).catch(() => {});
+    }
+  }, [unlocked]);
 
   // ─── Data ──────────────────────────────────────────────────
   const [evidence, setEvidence] = useState([]);
@@ -201,7 +260,42 @@ export default function EvidenceVaultScreen() {
     audio: evidence.filter(e => e.type === 'audio').length,
     photo: evidence.filter(e => e.type === 'photo').length,
     note:  evidence.filter(e => e.type === 'note').length,
+    sos:   sosRecordings.length,
   };
+
+  // Passkey gate (if passkey set)
+  if (passkeySet && !unlocked) {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.lockedWrap}>
+          <View style={styles.lockIcon}>
+            <Ionicons name="key" size={42} color={T.primary} />
+          </View>
+          <Text style={styles.lockTitle}>Enter Vault Passkey</Text>
+          <Text style={styles.lockSub}>Enter your secure passkey to access evidence.</Text>
+          <TextInput
+            style={styles.pinInput}
+            value={pinInput}
+            onChangeText={setPinInput}
+            keyboardType="number-pad"
+            secureTextEntry
+            placeholder="• • • •"
+            placeholderTextColor={T.textHint}
+            maxLength={8}
+            autoFocus
+          />
+          <PrimaryBtn icon="lock-open" onPress={verifyPasskey} style={{ marginTop: 16, paddingHorizontal: 32 }}>
+            Unlock
+          </PrimaryBtn>
+          {biometricEnabled && (
+            <GhostBtn icon="finger-print" onPress={tryUnlock} style={{ marginTop: 12 }}>
+              Use Biometric
+            </GhostBtn>
+          )}
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
@@ -218,7 +312,49 @@ export default function EvidenceVaultScreen() {
               <Stat icon="mic"            label="Audio" value={counts.audio} color={T.danger} />
               <Stat icon="camera"         label="Photo" value={counts.photo} color={T.teal} />
               <Stat icon="document-text"  label="Notes" value={counts.note}  color={T.warning} />
+              <Stat icon="warning"        label="SOS"   value={counts.sos}   color={T.danger} />
             </View>
+
+            {/* Passkey setup hint */}
+            {!passkeySet && (
+              <TouchableOpacity
+                style={{ backgroundColor: `${T.warning}15`, borderWidth: 1, borderColor: `${T.warning}40`, borderRadius: 12, padding: 14, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                onPress={() => setShowPinSetup(true)}
+              >
+                <Ionicons name="key" size={18} color={T.warning} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: T.white, fontSize: 13, fontWeight: '700' }}>Set Vault Passkey</Text>
+                  <Text style={{ color: T.textSub, fontSize: 11 }}>Protect your evidence with a PIN-based passkey</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color={T.textHint} />
+              </TouchableOpacity>
+            )}
+
+            {/* SOS Auto-Recordings Section */}
+            {sosRecordings.length > 0 && (
+              <>
+                <SectionTitle>SOS Auto-Recordings</SectionTitle>
+                {sosRecordings.slice(0, 5).map((rec, i) => (
+                  <Card key={i} style={{ marginBottom: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View style={[styles.itemIcon, { backgroundColor: `${T.danger}22` }]}>
+                        <Ionicons name="warning" size={16} color={T.danger} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.itemTitle}>SOS Recording</Text>
+                        <Text style={styles.itemSub}>
+                          {rec.sosId ? `SOS ${rec.sosId.substring(0, 8)}...` : 'Auto-captured during SOS'}
+                        </Text>
+                        <Text style={styles.itemTime}>
+                          {rec.startedAt ? new Date(rec.startedAt).toLocaleString() : 'Unknown time'}
+                        </Text>
+                      </View>
+                      <Pill icon="shield-checkmark" label="Protected" active color={T.success} />
+                    </View>
+                  </Card>
+                ))}
+              </>
+            )}
 
             {recording && (
               <Card style={{ borderColor: 'rgba(255,23,68,0.5)' }}>
@@ -420,4 +556,19 @@ const styles = StyleSheet.create({
   recText: { color: T.danger, fontSize: 14, fontWeight: '900', letterSpacing: 1 },
 
   preview: { width: '100%', height: 220, borderRadius: 16, marginTop: 12, backgroundColor: '#000' },
+
+  pinInput: {
+    width: 200,
+    height: 56,
+    backgroundColor: T.surface,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: T.border,
+    color: T.white,
+    fontSize: 24,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 12,
+    marginTop: 22,
+  },
 });

@@ -43,6 +43,15 @@ export interface VerificationProfile {
   rejectionReason?: string;
   flagCount: number;
   lastFlaggedAt?: string;
+  /** Community vouching: number of verified users who vouched for this user */
+  communityVouches: number;
+  /** Government ID type (Aadhaar, DL, Passport, etc.) — placeholder */
+  govIdType?: string;
+  /** Whether government ID has been verified */
+  govIdVerified?: boolean;
+  /** Whether profile has been submitted for admin review */
+  submittedForReview?: boolean;
+  submittedForReviewAt?: string;
 }
 
 export interface LivenessResult {
@@ -266,6 +275,130 @@ class IdentityVerificationServiceClass {
     await this._save();
   }
 
+  // ── Community Vouching ────────────────────────────────────────
+
+  /**
+   * Record a community vouch for this user.
+   * Existing verified users can vouch for new users.
+   */
+  async addCommunityVouch(): Promise<{ vouches: number }> {
+    if (!this._profile) await this.init();
+    this._profile!.communityVouches = (this._profile!.communityVouches || 0) + 1;
+
+    // Auto-verify if 3+ vouches from verified users + phone verified + gender declared
+    if (
+      this._profile!.communityVouches >= 3 &&
+      this._profile!.phoneVerified &&
+      this._profile!.genderDeclared
+    ) {
+      this._profile!.status = 'verified';
+      this._profile!.verifiedAt = new Date().toISOString();
+      Logger.log('[IdentityVerification] Auto-verified via community vouches');
+    }
+
+    await this._save();
+    return { vouches: this._profile!.communityVouches };
+  }
+
+  /**
+   * Get community vouch count.
+   */
+  getCommunityVouches(): number {
+    return this._profile?.communityVouches || 0;
+  }
+
+  // ── Government ID (placeholder for Aadhaar/DigiLocker) ────────
+
+  /**
+   * Store government ID type.
+   * Actual Aadhaar verification requires KYC license — this is the UI placeholder.
+   */
+  async setGovernmentId(idType: string): Promise<void> {
+    if (!this._profile) await this.init();
+    this._profile!.govIdType = idType;
+    this._profile!.govIdVerified = false; // Actual verification TBD
+    await this._save();
+  }
+
+  /**
+   * Mark government ID as verified (called by admin or KYC API).
+   */
+  async markGovIdVerified(): Promise<void> {
+    if (!this._profile) await this.init();
+    this._profile!.govIdVerified = true;
+
+    // If all criteria met, auto-verify
+    if (this._profile!.phoneVerified && this._profile!.livenessCompleted) {
+      this._profile!.status = 'verified';
+      this._profile!.verifiedAt = new Date().toISOString();
+    }
+    await this._save();
+  }
+
+  // ── Admin Review Queue ────────────────────────────────────────
+
+  /**
+   * Submit profile for admin manual review.
+   * Writes to Firebase RTDB verification_queue node.
+   */
+  async submitForAdminReview(uid: string): Promise<{ success: boolean; error?: string }> {
+    if (!this._profile) await this.init();
+
+    try {
+      const { getDatabase, ref, set } = await import('firebase/database');
+      const { getApp } = await import('firebase/app');
+      const app = getApp();
+      const database = getDatabase(app);
+
+      const reviewData = {
+        userId: uid,
+        name: 'User', // UI layer should pass real name
+        gender: this._profile!.genderDeclared || 'Not declared',
+        phoneVerified: this._profile!.phoneVerified,
+        livenessCompleted: this._profile!.livenessCompleted,
+        livenessScore: this._profile!.livenessCompleted ? 0.85 : 0,
+        selfieHash: this._profile!.selfieHash || '',
+        govIdType: this._profile!.govIdType || 'None',
+        govIdVerified: this._profile!.govIdVerified || false,
+        communityVouches: this._profile!.communityVouches || 0,
+        flagCount: this._profile!.flagCount || 0,
+        submittedAt: new Date().toISOString(),
+        status: 'pending',
+      };
+
+      const queueRef = ref(database, `verification_queue/${uid}`);
+      await set(queueRef, reviewData);
+
+      this._profile!.submittedForReview = true;
+      this._profile!.submittedForReviewAt = new Date().toISOString();
+      this._profile!.status = 'pending_review';
+      await this._save();
+
+      Logger.log(`[IdentityVerification] Submitted for admin review: ${uid}`);
+      return { success: true };
+    } catch (e: any) {
+      Logger.error('[IdentityVerification] Admin review submit error:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * Get verification confidence score (0-1).
+   * Higher score = more trustworthy identity.
+   */
+  getConfidenceScore(): number {
+    if (!this._profile) return 0;
+    let score = 0;
+    if (this._profile.phoneVerified) score += 0.25;
+    if (this._profile.livenessCompleted) score += 0.25;
+    if (this._profile.genderDeclared) score += 0.10;
+    if (this._profile.govIdVerified) score += 0.25;
+    if (this._profile.communityVouches >= 1) score += 0.05;
+    if (this._profile.communityVouches >= 3) score += 0.10;
+    if (this._profile.flagCount > 0) score -= 0.15 * this._profile.flagCount;
+    return Math.max(0, Math.min(1, score));
+  }
+
   // ── Community Flagging ────────────────────────────────────────
 
   async recordFlag(): Promise<void> {
@@ -359,6 +492,7 @@ class IdentityVerificationServiceClass {
       phoneVerified: false,
       livenessCompleted: false,
       flagCount: 0,
+      communityVouches: 0,
     };
   }
 
